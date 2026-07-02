@@ -1,0 +1,21 @@
+{
+  "enabledPlugins": {
+    "unreal-engine-skills-for-claude-code@unreal-engine-skills-marketplace": true
+  },
+  "permissions": {
+    "allow": [
+      "Edit(D:/UE5.8 project/MyProject/Source/**)",
+      "Edit(D:/UE5.8 project/MyProject/Config/**)",
+      "Edit(D:/UE5.8 project/MyProject/*.uproject)",
+      "Read(D:/UE5.8 project/MyProject/**)"
+    ],
+    "deny": [
+      "Edit(D:/UE5.8 project/MyProject/Content/**)",
+      "Edit(D:/UE5.8 project/MyProject/Binaries/**)",
+      "Edit(D:/UE5.8 project/MyProject/Intermediate/**)",
+      "Edit(D:/UE5.8 project/MyProject/Saved/**)",
+      "Read(C:/Users/**)",
+      "Edit(../**)"
+    ]
+  }
+}
