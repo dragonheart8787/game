@@ -103,5 +103,8 @@ struct FNovaAbilityGraphDef
 	float EnergyCost = 10.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability")
+	float Damage = 20.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability")
 	FNovaAbilityRuntimeParams DefaultParams;
 };

@@ -12,6 +12,7 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "IdentityOverrideComponent.h"
 #include "InputActionValue.h"
+#include "InputMappingContext.h"
 #include "NovaDebugSubsystem.h"
 #include "StoryDirectorSubsystem.h"
 
@@ -50,16 +51,49 @@ void ANovaPlayerCharacter::NotifyControllerChanged()
 {
 	Super::NotifyControllerChanged();
 
-	if (const APlayerController* PlayerController = Cast<APlayerController>(Controller))
+	TryAddDefaultMappingContext(TEXT("NotifyControllerChanged"));
+}
+
+void ANovaPlayerCharacter::TryAddDefaultMappingContext(const TCHAR* Caller)
+{
+	const APlayerController* PlayerController = Cast<APlayerController>(Controller);
+	if (!PlayerController)
 	{
-		if (UEnhancedInputLocalPlayerSubsystem* InputSubsystem =
-			ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PlayerController->GetLocalPlayer()))
-		{
-			if (DefaultMappingContext)
-			{
-				InputSubsystem->AddMappingContext(DefaultMappingContext, 0);
-			}
-		}
+		UE_LOG(LogNovaCharacter, Log, TEXT("[%s] TryAddDefaultMappingContext: no PlayerController yet"), Caller);
+		return;
+	}
+
+	const ULocalPlayer* LocalPlayer = PlayerController->GetLocalPlayer();
+	if (!LocalPlayer)
+	{
+		UE_LOG(LogNovaCharacter, Warning, TEXT("[%s] TryAddDefaultMappingContext: PlayerController has no LocalPlayer"), Caller);
+		return;
+	}
+
+	UEnhancedInputLocalPlayerSubsystem* InputSubsystem =
+		ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(LocalPlayer);
+	if (!InputSubsystem)
+	{
+		UE_LOG(LogNovaCharacter, Warning, TEXT("[%s] TryAddDefaultMappingContext: no EnhancedInputLocalPlayerSubsystem"), Caller);
+		return;
+	}
+
+	if (!DefaultMappingContext)
+	{
+		UE_LOG(LogNovaCharacter, Warning, TEXT("[%s] TryAddDefaultMappingContext: DefaultMappingContext is null (BP field unassigned?)"), Caller);
+		return;
+	}
+
+	if (InputSubsystem->HasMappingContext(DefaultMappingContext))
+	{
+		UE_LOG(LogNovaCharacter, Log, TEXT("[%s] TryAddDefaultMappingContext: '%s' already added"),
+			Caller, *DefaultMappingContext->GetName());
+	}
+	else
+	{
+		InputSubsystem->AddMappingContext(DefaultMappingContext, 0);
+		UE_LOG(LogNovaCharacter, Log, TEXT("[%s] TryAddDefaultMappingContext: added '%s' (priority 0)"),
+			Caller, *DefaultMappingContext->GetName());
 	}
 }
 
@@ -75,13 +109,23 @@ void ANovaPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 		return;
 	}
 
+	// Input component exists and possession is done here — safe point to ensure the IMC is applied.
+	TryAddDefaultMappingContext(TEXT("SetupPlayerInputComponent"));
+
+	UE_LOG(LogNovaCharacter, Log,
+		TEXT("SetupPlayerInputComponent on %s: Move=%d Look=%d Jump=%d Dash=%d Cast1=%d Cast2=%d StoryA=%d StoryB=%d Debug=%d IMC=%d"),
+		*GetClass()->GetName(),
+		IA_Move != nullptr, IA_Look != nullptr, IA_Jump != nullptr, IA_Dash != nullptr,
+		IA_CastAbility1 != nullptr, IA_CastAbility2 != nullptr, IA_TriggerStoryA != nullptr,
+		IA_TriggerStoryB != nullptr, IA_ToggleDebug != nullptr, DefaultMappingContext != nullptr);
+
 	// Input assets are assigned in the character Blueprint; unassigned actions are skipped.
 	if (IA_Move) { Input->BindAction(IA_Move, ETriggerEvent::Triggered, this, &ANovaPlayerCharacter::Move); }
 	if (IA_Look) { Input->BindAction(IA_Look, ETriggerEvent::Triggered, this, &ANovaPlayerCharacter::Look); }
 	if (IA_Jump)
 	{
-		Input->BindAction(IA_Jump, ETriggerEvent::Started, this, &ACharacter::Jump);
-		Input->BindAction(IA_Jump, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
+		Input->BindAction(IA_Jump, ETriggerEvent::Started, this, &ANovaPlayerCharacter::JumpStart);
+		Input->BindAction(IA_Jump, ETriggerEvent::Completed, this, &ANovaPlayerCharacter::JumpStop);
 	}
 	if (IA_Dash) { Input->BindAction(IA_Dash, ETriggerEvent::Started, this, &ANovaPlayerCharacter::Dash); }
 	if (IA_CastAbility1) { Input->BindAction(IA_CastAbility1, ETriggerEvent::Started, this, &ANovaPlayerCharacter::CastAbility1); }
@@ -91,24 +135,24 @@ void ANovaPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 	if (IA_ToggleDebug) { Input->BindAction(IA_ToggleDebug, ETriggerEvent::Started, this, &ANovaPlayerCharacter::ToggleDebug); }
 }
 
-void ANovaPlayerCharacter::Move(const FInputActionValue& Value)
+bool ANovaPlayerCharacter::IsControlHeld() const
 {
-	const FVector2D MovementVector = Value.Get<FVector2D>();
-	if (!Controller)
-	{
-		return;
-	}
-
-	// Director Hold takes control away entirely.
 	if (const UGameInstance* GameInstance = GetGameInstance())
 	{
 		if (const UStoryDirectorSubsystem* Story = GameInstance->GetSubsystem<UStoryDirectorSubsystem>())
 		{
-			if (Story->GetControlMask() == ENovaControlMask::Hold)
-			{
-				return;
-			}
+			return Story->GetControlMask() == ENovaControlMask::Hold;
 		}
+	}
+	return false;
+}
+
+void ANovaPlayerCharacter::Move(const FInputActionValue& Value)
+{
+	const FVector2D MovementVector = Value.Get<FVector2D>();
+	if (!Controller || IsControlHeld())
+	{
+		return;
 	}
 
 	const FRotator YawRotation(0.f, Controller->GetControlRotation().Yaw, 0.f);
@@ -122,15 +166,33 @@ void ANovaPlayerCharacter::Move(const FInputActionValue& Value)
 void ANovaPlayerCharacter::Look(const FInputActionValue& Value)
 {
 	const FVector2D LookAxisVector = Value.Get<FVector2D>();
-	if (Controller)
+	if (Controller && !IsControlHeld())
 	{
 		AddControllerYawInput(LookAxisVector.X);
 		AddControllerPitchInput(LookAxisVector.Y);
 	}
 }
 
+void ANovaPlayerCharacter::JumpStart()
+{
+	if (!IsControlHeld())
+	{
+		Jump();
+	}
+}
+
+void ANovaPlayerCharacter::JumpStop()
+{
+	StopJumping();
+}
+
 void ANovaPlayerCharacter::Dash()
 {
+	if (IsControlHeld())
+	{
+		return;
+	}
+
 	const double Now = GetWorld()->GetTimeSeconds();
 	if (Now < NextDashTime)
 	{
@@ -155,12 +217,20 @@ void ANovaPlayerCharacter::Dash()
 
 void ANovaPlayerCharacter::CastAbility1()
 {
+	if (IsControlHeld())
+	{
+		return;
+	}
 	ElementAbilityComp->SetRuntimeDirection(GetActorForwardVector());
 	ElementAbilityComp->CastAbilityById(TEXT("Slash"));
 }
 
 void ANovaPlayerCharacter::CastAbility2()
 {
+	if (IsControlHeld())
+	{
+		return;
+	}
 	ElementAbilityComp->SetRuntimeDirection(GetActorForwardVector());
 	ElementAbilityComp->CastAbilityById(TEXT("Edgewall"));
 }

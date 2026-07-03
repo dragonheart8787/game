@@ -79,6 +79,9 @@ private:
 
 	void EndCurrentStory();
 
+	/** Auto-advances beats after each beat's DurationSeconds. */
+	FTimerHandle BeatTimerHandle;
+
 	/** Registered story definitions by id. */
 	TMap<FName, FNovaStoryDef> Stories;
 

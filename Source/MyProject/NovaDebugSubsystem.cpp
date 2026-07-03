@@ -101,5 +101,9 @@ void UNovaDebugSubsystem::DrawOverlay(float DeltaTime) const
 			Cooldowns += FString::Printf(TEXT("%s=%.1fs "), *AbilityId.ToString(), Abilities->GetRemainingCooldown(AbilityId));
 		}
 		DrawLine(Line++, FString::Printf(TEXT("[Nova] Cooldowns: %s"), *Cooldowns));
+
+		const FString& LastEvent = Abilities->GetLastAbilityEventText();
+		DrawLine(Line++, FString::Printf(TEXT("[Nova] LastAbility: %s"),
+			LastEvent.IsEmpty() ? TEXT("<none>") : *LastEvent), FColor::Yellow);
 	}
 }

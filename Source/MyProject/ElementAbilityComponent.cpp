@@ -4,7 +4,12 @@
 
 #include "AbilityGraphRuntime.h"
 #include "IdentityOverrideComponent.h"
+#include "DrawDebugHelpers.h"
+#include "Engine/OverlapResult.h"
+#include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "GameFramework/Pawn.h"
+#include "Kismet/GameplayStatics.h"
 
 DEFINE_LOG_CATEGORY(LogNovaAbility);
 
@@ -85,38 +90,107 @@ bool UElementAbilityComponent::CastAbilityById(FName AbilityId)
 		{
 			if (Identity->AreAbilitiesRestricted())
 			{
-				OnAbilityEvent.Broadcast(AbilityId, TEXT("CastBlocked_Identity"));
+				BroadcastAbilityEvent(AbilityId, TEXT("CastBlocked_Identity"),
+					TEXT("abilities restricted by identity override"));
 				return false;
 			}
 		}
 	}
 
-	if (GetRemainingCooldown(AbilityId) > 0.f)
+	const float Remaining = GetRemainingCooldown(AbilityId);
+	if (Remaining > 0.f)
 	{
-		OnAbilityEvent.Broadcast(AbilityId, TEXT("CastBlocked_Cooldown"));
+		BroadcastAbilityEvent(AbilityId, TEXT("CastBlocked_Cooldown"),
+			FString::Printf(TEXT("%.1fs remaining"), Remaining));
 		return false;
 	}
 
 	if (Energy < Definition->EnergyCost)
 	{
-		OnAbilityEvent.Broadcast(AbilityId, TEXT("CastBlocked_Cost"));
+		BroadcastAbilityEvent(AbilityId, TEXT("CastBlocked_Cost"),
+			FString::Printf(TEXT("need %.0f, have %.0f"), Definition->EnergyCost, Energy));
 		return false;
 	}
 
 	UNovaAbilityGraphRuntime* Runtime = Runtimes.FindRef(AbilityId);
 	if (!Runtime || !Runtime->Execute(GetOwner(), RuntimeParams))
 	{
-		OnAbilityEvent.Broadcast(AbilityId, TEXT("CastFailed"));
+		BroadcastAbilityEvent(AbilityId, TEXT("CastFailed"), TEXT("runtime execute failed"));
 		return false;
 	}
 
 	Energy -= Definition->EnergyCost;
 	CooldownEndTimes.Add(AbilityId, GetWorld()->GetTimeSeconds() + Definition->CooldownSeconds);
 
-	// VFX hookup point (stub): CastVFX is spawned here once a Niagara asset is assigned.
+	// VFX hookup point (stub): once a Niagara asset is assigned to CastVFX it spawns here.
+	// Until then the cast shape is debug-drawn inside ApplyAbilityEffects.
+	ApplyAbilityEffects(*Definition);
 
-	OnAbilityEvent.Broadcast(AbilityId, TEXT("CastStarted"));
+	BroadcastAbilityEvent(AbilityId, TEXT("CastStarted"),
+		FString::Printf(TEXT("W=%.0f Arc=%.0f R=%.0f Dmg=%.0f"),
+			RuntimeParams.Width, RuntimeParams.Arc, RuntimeParams.Range, Definition->Damage));
 	return true;
+}
+
+void UElementAbilityComponent::ApplyAbilityEffects(const FNovaAbilityGraphDef& Definition)
+{
+	AActor* Owner = GetOwner();
+	UWorld* World = GetWorld();
+	if (!Owner || !World)
+	{
+		return;
+	}
+
+	const FVector Origin = Owner->GetActorLocation();
+	const FVector Direction = RuntimeParams.Direction.GetSafeNormal();
+	const float Range = RuntimeParams.Range;
+	const float HalfArcRad = FMath::DegreesToRadians(FMath::Max(RuntimeParams.Arc, 1.f) * 0.5f);
+
+	// Placeholder VFX: direction line, range/arc cone, width sphere at the far end.
+	DrawDebugLine(World, Origin, Origin + Direction * Range, FColor::Magenta, false, DebugDrawSeconds, 0, 3.f);
+	DrawDebugCone(World, Origin, Direction, Range, HalfArcRad, HalfArcRad, 16, FColor::Purple, false, DebugDrawSeconds);
+	DrawDebugSphere(World, Origin + Direction * Range, FMath::Max(RuntimeParams.Width * 0.5f, 10.f), 12,
+		FColor::Cyan, false, DebugDrawSeconds);
+
+	// Hit check: everything inside the range sphere whose bearing falls within the arc.
+	TArray<FOverlapResult> Overlaps;
+	FCollisionObjectQueryParams ObjectParams;
+	ObjectParams.AddObjectTypesToQuery(ECC_Pawn);
+	ObjectParams.AddObjectTypesToQuery(ECC_WorldDynamic);
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(NovaAbilityCast), /*bTraceComplex=*/false, Owner);
+	World->OverlapMultiByObjectType(Overlaps, Origin, FQuat::Identity, ObjectParams,
+		FCollisionShape::MakeSphere(Range), QueryParams);
+
+	const float MinDot = FMath::Cos(HalfArcRad);
+	TSet<AActor*> DamagedActors;
+	for (const FOverlapResult& Overlap : Overlaps)
+	{
+		AActor* Target = Overlap.GetActor();
+		if (!Target || Target == Owner || DamagedActors.Contains(Target))
+		{
+			continue;
+		}
+
+		const FVector ToTarget = Target->GetActorLocation() - Origin;
+		if (ToTarget.IsNearlyZero() || FVector::DotProduct(ToTarget.GetSafeNormal(), Direction) < MinDot)
+		{
+			continue;
+		}
+
+		DamagedActors.Add(Target);
+		const APawn* OwnerPawn = Cast<APawn>(Owner);
+		UGameplayStatics::ApplyDamage(Target, Definition.Damage,
+			OwnerPawn ? OwnerPawn->GetController() : nullptr, Owner, nullptr);
+		DrawDebugSphere(World, Target->GetActorLocation(), 40.f, 12, FColor::Red, false, DebugDrawSeconds);
+	}
+}
+
+void UElementAbilityComponent::BroadcastAbilityEvent(FName AbilityId, FName EventType, const FString& Detail)
+{
+	LastAbilityEventText = FString::Printf(TEXT("%s: %s (%s)"),
+		*AbilityId.ToString(), *EventType.ToString(), *Detail);
+	UE_LOG(LogNovaAbility, Log, TEXT("%s"), *LastAbilityEventText);
+	OnAbilityEvent.Broadcast(AbilityId, EventType);
 }
 
 void UElementAbilityComponent::SetRuntimeDirection(const FVector& Direction)

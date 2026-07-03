@@ -40,10 +40,21 @@ protected:
 
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 
+	/** True while the Director's control mask is Hold (player control locked). */
+	bool IsControlHeld() const;
+
+	/** Adds DefaultMappingContext to the local player's Enhanced Input subsystem.
+	 *  Called from both NotifyControllerChanged and SetupPlayerInputComponent so
+	 *  whichever runs with a valid LocalPlayer wins; logs every skip reason.
+	 *  Caller tag makes the log sequence unambiguous. */
+	void TryAddDefaultMappingContext(const TCHAR* Caller);
+
 	// --- Input handlers ---
 
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
+	void JumpStart();
+	void JumpStop();
 	void Dash();
 	void CastAbility1();
 	void CastAbility2();

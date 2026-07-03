@@ -2,6 +2,8 @@
 
 #include "StoryDirectorSubsystem.h"
 
+#include "Engine/GameInstance.h"
+#include "TimerManager.h"
 #include "WorldStateSubsystem.h"
 
 DEFINE_LOG_CATEGORY(LogNovaStory);
@@ -19,10 +21,10 @@ void UStoryDirectorSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		StoryA.StoryId = TEXT("StoryA_Demo");
 		StoryA.StoryType = ENovaStoryType::TypeA;
 		StoryA.Beats = {
-			{ TEXT("Establish"), 1.5f, ENovaControlMask::Hold },
-			{ TEXT("Approach"), 5.f, ENovaControlMask::Guide },
+			{ TEXT("Establish"), 1.f, ENovaControlMask::Hold },
+			{ TEXT("Approach"), 4.f, ENovaControlMask::Guide },
 			{ TEXT("Impact"), 1.f, ENovaControlMask::Punch },
-			{ TEXT("Resolve"), 3.f, ENovaControlMask::None },
+			{ TEXT("Resolve"), 2.f, ENovaControlMask::None },
 		};
 		RegisterStory(StoryA);
 	}
@@ -31,8 +33,8 @@ void UStoryDirectorSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		StoryB.StoryId = TEXT("StoryB_Demo");
 		StoryB.StoryType = ENovaStoryType::TypeB;
 		StoryB.Beats = {
-			{ TEXT("LensIn"), 1.f, ENovaControlMask::Hold },
-			{ TEXT("Observe"), 4.f, ENovaControlMask::Guide },
+			{ TEXT("LensIn"), 0.5f, ENovaControlMask::Hold },
+			{ TEXT("Observe"), 3.f, ENovaControlMask::Guide },
 		};
 		RegisterStory(StoryB);
 	}
@@ -146,12 +148,21 @@ void UStoryDirectorSubsystem::EnterBeat(int32 BeatIndex)
 	SetControlMask(Beat.ControlMask);
 	OnStoryBeat.Broadcast(CurrentStoryId, BeatIndex);
 
+	// Beats auto-advance on a timer for the slice; sequencer/dialogue pacing comes later.
+	if (Beat.DurationSeconds > 0.f)
+	{
+		GetGameInstance()->GetTimerManager().SetTimer(BeatTimerHandle, this,
+			&UStoryDirectorSubsystem::AdvanceBeat, Beat.DurationSeconds, false);
+	}
+
 	UE_LOG(LogNovaStory, Log, TEXT("Story '%s' beat %d ('%s'), mask %d"),
 		*CurrentStoryId.ToString(), BeatIndex, *Beat.BeatName.ToString(), static_cast<int32>(Beat.ControlMask));
 }
 
 void UStoryDirectorSubsystem::EndCurrentStory()
 {
+	GetGameInstance()->GetTimerManager().ClearTimer(BeatTimerHandle);
+
 	const FName FinishedStoryId = CurrentStoryId;
 
 	// Story outcomes must land in WorldState as a delta.

@@ -15,4 +15,7 @@ class ANovaGameMode : public AGameModeBase
 public:
 
 	ANovaGameMode();
+
+	/** Lazily resolves BP_NovaCharacter so creation order (BP after C++) doesn't matter. */
+	virtual UClass* GetDefaultPawnClassForController_Implementation(AController* InController) override;
 };

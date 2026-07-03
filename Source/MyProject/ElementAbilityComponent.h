@@ -65,6 +65,10 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category="Ability")
 	TArray<FName> GetRegisteredAbilityIds() const;
 
+	/** Human-readable text of the last ability event, for the debug overlay. */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category="Ability")
+	const FString& GetLastAbilityEventText() const { return LastAbilityEventText; }
+
 	UPROPERTY(BlueprintAssignable, Category="Ability")
 	FNovaOnAbilityEvent OnAbilityEvent;
 
@@ -80,6 +84,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability|VFX")
 	TObjectPtr<UNiagaraSystem> CastVFX;
 
+	/** Lifetime of the placeholder debug-draw shapes standing in for real VFX. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability|VFX")
+	float DebugDrawSeconds = 1.5f;
+
 protected:
 
 	virtual void BeginPlay() override;
@@ -88,6 +96,11 @@ protected:
 		FActorComponentTickFunction* ThisTickFunction) override;
 
 private:
+
+	/** Debug-draw the cast shape and apply damage to targets in the range/arc cone. */
+	void ApplyAbilityEffects(const FNovaAbilityGraphDef& Definition);
+
+	void BroadcastAbilityEvent(FName AbilityId, FName EventType, const FString& Detail);
 
 	/** Registered graph definitions by ability id. */
 	TMap<FName, FNovaAbilityGraphDef> Abilities;
@@ -102,4 +115,6 @@ private:
 	FNovaAbilityRuntimeParams RuntimeParams;
 
 	float Energy = 100.f;
+
+	FString LastAbilityEventText;
 };
