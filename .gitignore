@@ -8,3 +8,4 @@ DerivedDataCache/
 *.opensdf
 *.sdf
 *.opendb
+.claude/settings.local.json
