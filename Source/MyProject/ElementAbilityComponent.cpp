@@ -48,7 +48,6 @@ void UElementAbilityComponent::BeginPlay()
 		Edgewall.CooldownSeconds = 3.f;
 		Edgewall.EnergyCost = 25.f;
 		Edgewall.Shape.ShapeType = ENovaAbilityShapeType::Line;
-		Edgewall.Shape.RangeOverride = 300.f;
 		Edgewall.Path.PathType = ENovaAbilityPathType::Linear;
 		Edgewall.Path.TravelDistance = 300.f;
 		Edgewall.Spawn.SpawnType = ENovaAbilitySpawnType::BlockingWall;

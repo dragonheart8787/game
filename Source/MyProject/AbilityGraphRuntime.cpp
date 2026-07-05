@@ -77,9 +77,15 @@ void UNovaAbilityGraphRuntime::DrawShape(UWorld* World, const FVector& CastOrigi
 		break;
 
 	case ENovaAbilityShapeType::Line:
-		// Direction line from caster to wherever the Path resolved the effect.
-		DrawDebugLine(World, CastOrigin, EffectOrigin, FColor::Magenta, false, DebugDrawSeconds, 0, 3.f);
+	{
+		// Direction line from caster to wherever the Path resolved the effect;
+		// an Instant path resolves in place, so fall back to Range length.
+		const FVector LineEnd = (EffectOrigin - CastOrigin).IsNearlyZero()
+			? CastOrigin + Direction * Range
+			: EffectOrigin;
+		DrawDebugLine(World, CastOrigin, LineEnd, FColor::Magenta, false, DebugDrawSeconds, 0, 3.f);
 		break;
+	}
 
 	case ENovaAbilityShapeType::Sphere:
 		DrawDebugSphere(World, EffectOrigin, Radius, 12, FColor::Cyan, false, DebugDrawSeconds);
@@ -94,13 +100,16 @@ void UNovaAbilityGraphRuntime::ExecuteSpawn(UWorld* World, const FVector& Effect
 		return;
 	}
 
-	// Seat the wall on the ground under the effect origin; fall back to the
-	// origin height when nothing is below (e.g. cast over a pit).
+	// Seat the wall on static ground under the effect origin; fall back to the
+	// origin height when nothing is below (e.g. cast over a pit). Static-only
+	// on purpose: a visibility trace would land on whatever pawn/wall happens
+	// to stand there and float the new wall on top of it.
 	FVector Center = EffectOrigin;
 	FHitResult GroundHit;
 	const FVector TraceStart = EffectOrigin + FVector(0.f, 0.f, 200.f);
 	const FVector TraceEnd = EffectOrigin - FVector(0.f, 0.f, 1000.f);
-	if (World->LineTraceSingleByChannel(GroundHit, TraceStart, TraceEnd, ECC_Visibility))
+	if (World->LineTraceSingleByObjectType(GroundHit, TraceStart, TraceEnd,
+			FCollisionObjectQueryParams(ECC_WorldStatic)))
 	{
 		Center.Z = GroundHit.ImpactPoint.Z + Definition.Spawn.WallHalfExtent.Z;
 	}
