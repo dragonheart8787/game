@@ -1,8 +1,14 @@
-// Project Nova — Ability Graph runtime (vertical slice stub)
+// Project Nova — Ability Graph runtime (vertical slice)
 
 #include "AbilityGraphRuntime.h"
 
+#include "DrawDebugHelpers.h"
+#include "Engine/OverlapResult.h"
+#include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "GameFramework/Pawn.h"
+#include "Kismet/GameplayStatics.h"
+#include "NovaBlockingWall.h"
 
 void UNovaAbilityGraphRuntime::Initialize(const FNovaAbilityGraphDef& InDefinition)
 {
@@ -10,24 +16,149 @@ void UNovaAbilityGraphRuntime::Initialize(const FNovaAbilityGraphDef& InDefiniti
 	bInitialized = true;
 }
 
-bool UNovaAbilityGraphRuntime::Execute(AActor* Instigator, const FNovaAbilityRuntimeParams& Params)
+bool UNovaAbilityGraphRuntime::Execute(AActor* Instigator, const FNovaAbilityRuntimeParams& Params,
+	float DebugDrawSeconds)
 {
-	if (!bInitialized)
+	if (!bInitialized || !Instigator)
+	{
+		return false;
+	}
+	UWorld* World = Instigator->GetWorld();
+	if (!World)
 	{
 		return false;
 	}
 
-	// Stub: walk the nodes so the execution order is visible in the log.
-	// Real evaluation (Shape/Path/Constraint/Spawn/Affect/Interact) comes in a later patch.
-	for (const FNovaAbilityNode& Node : Definition.Nodes)
-	{
-		UE_LOG(LogTemp, Verbose, TEXT("[AbilityGraph] %s: node '%s' (type %d)"),
-			*Definition.AbilityId.ToString(), *Node.NodeId.ToString(), static_cast<int32>(Node.NodeType));
-	}
-
 	UE_LOG(LogTemp, Log, TEXT("[AbilityGraph] Executed '%s' by '%s' (range %.0f, width %.0f, arc %.0f)"),
 		*Definition.AbilityId.ToString(),
-		Instigator ? *Instigator->GetName() : TEXT("None"),
+		*Instigator->GetName(),
 		Params.Range, Params.Width, Params.Arc);
+
+	// 1) Shape — resolve geometry. Node overrides pin values; <= 0 inherits the
+	//    runtime params so player shaping keeps working.
+	const FVector Direction = Params.Direction.GetSafeNormal();
+	const float Range = Definition.Shape.RangeOverride > 0.f ? Definition.Shape.RangeOverride : Params.Range;
+	const float ArcDegrees = Definition.Shape.ArcDegreesOverride > 0.f ? Definition.Shape.ArcDegreesOverride : Params.Arc;
+	const float Radius = Definition.Shape.RadiusOverride > 0.f
+		? Definition.Shape.RadiusOverride
+		: FMath::Max(Params.Width * 0.5f, 10.f);
+	const float HalfArcRad = FMath::DegreesToRadians(FMath::Max(ArcDegrees, 1.f) * 0.5f);
+
+	// 2) Path — where the shape resolves.
+	const FVector CastOrigin = Instigator->GetActorLocation();
+	FVector EffectOrigin = CastOrigin;
+	if (Definition.Path.PathType == ENovaAbilityPathType::Linear)
+	{
+		EffectOrigin += Direction * Definition.Path.TravelDistance;
+	}
+
+	DrawShape(World, CastOrigin, EffectOrigin, Direction, Range, HalfArcRad, Radius, DebugDrawSeconds);
+
+	// 3) Spawn — leave persistent actors behind.
+	ExecuteSpawn(World, EffectOrigin, Direction);
+
+	// 4) Affect — apply effects to targets inside the shape.
+	ExecuteAffect(World, Instigator, EffectOrigin, Direction, Range, HalfArcRad, DebugDrawSeconds);
+
 	return true;
+}
+
+void UNovaAbilityGraphRuntime::DrawShape(UWorld* World, const FVector& CastOrigin, const FVector& EffectOrigin,
+	const FVector& Direction, float Range, float HalfArcRad, float Radius, float DebugDrawSeconds) const
+{
+	switch (Definition.Shape.ShapeType)
+	{
+	case ENovaAbilityShapeType::Cone:
+		// The pre-node-system Slash visual, kept verbatim: direction line,
+		// range/arc cone, width sphere at the far end.
+		DrawDebugLine(World, CastOrigin, CastOrigin + Direction * Range, FColor::Magenta, false, DebugDrawSeconds, 0, 3.f);
+		DrawDebugCone(World, CastOrigin, Direction, Range, HalfArcRad, HalfArcRad, 16, FColor::Purple, false, DebugDrawSeconds);
+		DrawDebugSphere(World, CastOrigin + Direction * Range, Radius, 12, FColor::Cyan, false, DebugDrawSeconds);
+		break;
+
+	case ENovaAbilityShapeType::Line:
+		// Direction line from caster to wherever the Path resolved the effect.
+		DrawDebugLine(World, CastOrigin, EffectOrigin, FColor::Magenta, false, DebugDrawSeconds, 0, 3.f);
+		break;
+
+	case ENovaAbilityShapeType::Sphere:
+		DrawDebugSphere(World, EffectOrigin, Radius, 12, FColor::Cyan, false, DebugDrawSeconds);
+		break;
+	}
+}
+
+void UNovaAbilityGraphRuntime::ExecuteSpawn(UWorld* World, const FVector& EffectOrigin, const FVector& Direction) const
+{
+	if (Definition.Spawn.SpawnType != ENovaAbilitySpawnType::BlockingWall)
+	{
+		return;
+	}
+
+	// Seat the wall on the ground under the effect origin; fall back to the
+	// origin height when nothing is below (e.g. cast over a pit).
+	FVector Center = EffectOrigin;
+	FHitResult GroundHit;
+	const FVector TraceStart = EffectOrigin + FVector(0.f, 0.f, 200.f);
+	const FVector TraceEnd = EffectOrigin - FVector(0.f, 0.f, 1000.f);
+	if (World->LineTraceSingleByChannel(GroundHit, TraceStart, TraceEnd, ECC_Visibility))
+	{
+		Center.Z = GroundHit.ImpactPoint.Z + Definition.Spawn.WallHalfExtent.Z;
+	}
+
+	// Wall X axis (thin side) faces along the cast direction.
+	const FRotator Facing(0.f, Direction.Rotation().Yaw, 0.f);
+	const FTransform SpawnTransform(Facing, Center);
+
+	if (ANovaBlockingWall* Wall = World->SpawnActorDeferred<ANovaBlockingWall>(
+			ANovaBlockingWall::StaticClass(), SpawnTransform, nullptr, nullptr,
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn))
+	{
+		Wall->InitWall(Definition.Spawn.WallHalfExtent, Definition.Spawn.LifeSeconds);
+		Wall->FinishSpawning(SpawnTransform);
+	}
+}
+
+void UNovaAbilityGraphRuntime::ExecuteAffect(UWorld* World, AActor* Instigator, const FVector& EffectOrigin,
+	const FVector& Direction, float Range, float HalfArcRad, float DebugDrawSeconds) const
+{
+	if (Definition.Affect.AffectType != ENovaAbilityAffectType::Damage)
+	{
+		// Block is purely physical — the spawned wall's collision does the work.
+		return;
+	}
+
+	// Hit check: everything inside the range sphere whose bearing falls within
+	// the arc (Cone shapes only; Line/Sphere skip the angle filter).
+	TArray<FOverlapResult> Overlaps;
+	FCollisionObjectQueryParams ObjectParams;
+	ObjectParams.AddObjectTypesToQuery(ECC_Pawn);
+	ObjectParams.AddObjectTypesToQuery(ECC_WorldDynamic);
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(NovaAbilityCast), /*bTraceComplex=*/false, Instigator);
+	World->OverlapMultiByObjectType(Overlaps, EffectOrigin, FQuat::Identity, ObjectParams,
+		FCollisionShape::MakeSphere(Range), QueryParams);
+
+	const bool bUseArcFilter = Definition.Shape.ShapeType == ENovaAbilityShapeType::Cone;
+	const float MinDot = FMath::Cos(HalfArcRad);
+	const APawn* InstigatorPawn = Cast<APawn>(Instigator);
+	TSet<AActor*> DamagedActors;
+	for (const FOverlapResult& Overlap : Overlaps)
+	{
+		AActor* Target = Overlap.GetActor();
+		if (!Target || Target == Instigator || DamagedActors.Contains(Target))
+		{
+			continue;
+		}
+
+		const FVector ToTarget = Target->GetActorLocation() - EffectOrigin;
+		if (bUseArcFilter &&
+			(ToTarget.IsNearlyZero() || FVector::DotProduct(ToTarget.GetSafeNormal(), Direction) < MinDot))
+		{
+			continue;
+		}
+
+		DamagedActors.Add(Target);
+		UGameplayStatics::ApplyDamage(Target, Definition.Affect.Damage,
+			InstigatorPawn ? InstigatorPawn->GetController() : nullptr, Instigator, nullptr);
+		DrawDebugSphere(World, Target->GetActorLocation(), 40.f, 12, FColor::Red, false, DebugDrawSeconds);
+	}
 }

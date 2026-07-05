@@ -4,12 +4,8 @@
 
 #include "AbilityGraphRuntime.h"
 #include "IdentityOverrideComponent.h"
-#include "DrawDebugHelpers.h"
-#include "Engine/OverlapResult.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
-#include "GameFramework/Pawn.h"
-#include "Kismet/GameplayStatics.h"
 
 DEFINE_LOG_CATEGORY(LogNovaAbility);
 
@@ -24,29 +20,42 @@ void UElementAbilityComponent::BeginPlay()
 
 	Energy = MaxEnergy;
 
-	// Vertical slice: register two placeholder abilities so CastAbility1/2 have targets.
+	// Vertical slice: register the two demo abilities as node compositions.
+	// Real defs load from /Content/Data/Abilities JSON/DataAssets later.
 	if (!Abilities.Contains(TEXT("Slash")))
 	{
+		// Slash = Cone shape + Instant path + Damage affect. Geometry inherits
+		// the runtime params (overrides stay 0) so player shaping applies.
 		FNovaAbilityGraphDef Slash;
 		Slash.AbilityId = TEXT("Slash");
 		Slash.DisplayName = NSLOCTEXT("Nova", "AbilitySlash", "Slash");
 		Slash.CooldownSeconds = 0.75f;
 		Slash.EnergyCost = 10.f;
-		FNovaAbilityNode& ShapeNode = Slash.Nodes.AddDefaulted_GetRef();
-		ShapeNode.NodeId = TEXT("Shape_Blade");
-		ShapeNode.NodeType = ENovaAbilityNodeType::Shape;
+		Slash.Shape.ShapeType = ENovaAbilityShapeType::Cone;
+		Slash.Path.PathType = ENovaAbilityPathType::Instant;
+		Slash.Spawn.SpawnType = ENovaAbilitySpawnType::None;
+		Slash.Affect.AffectType = ENovaAbilityAffectType::Damage;
+		Slash.Affect.Damage = 20.f;
 		RegisterAbility(Slash);
 	}
 	if (!Abilities.Contains(TEXT("Edgewall")))
 	{
+		// Edgewall = Line shape + Linear path + BlockingWall spawn. The wall's
+		// own collision does the blocking, so Affect stays None.
 		FNovaAbilityGraphDef Edgewall;
 		Edgewall.AbilityId = TEXT("Edgewall");
 		Edgewall.DisplayName = NSLOCTEXT("Nova", "AbilityEdgewall", "Edgewall");
 		Edgewall.CooldownSeconds = 3.f;
 		Edgewall.EnergyCost = 25.f;
-		FNovaAbilityNode& SpawnNode = Edgewall.Nodes.AddDefaulted_GetRef();
-		SpawnNode.NodeId = TEXT("Spawn_Wall");
-		SpawnNode.NodeType = ENovaAbilityNodeType::Spawn;
+		Edgewall.Shape.ShapeType = ENovaAbilityShapeType::Line;
+		Edgewall.Shape.RangeOverride = 300.f;
+		Edgewall.Path.PathType = ENovaAbilityPathType::Linear;
+		Edgewall.Path.TravelDistance = 300.f;
+		Edgewall.Spawn.SpawnType = ENovaAbilitySpawnType::BlockingWall;
+		Edgewall.Spawn.WallHalfExtent = FVector(30.f, 200.f, 150.f);
+		Edgewall.Spawn.LifeSeconds = 5.f;
+		Edgewall.Affect.AffectType = ENovaAbilityAffectType::None;
+		Edgewall.Affect.Damage = 0.f;
 		RegisterAbility(Edgewall);
 	}
 }
@@ -112,8 +121,10 @@ bool UElementAbilityComponent::CastAbilityById(FName AbilityId)
 		return false;
 	}
 
+	// Single execution path: Shape -> Path -> Spawn -> Affect all run inside the
+	// graph runtime. Debug draws stand in for VFX until CastVFX is hooked up.
 	UNovaAbilityGraphRuntime* Runtime = Runtimes.FindRef(AbilityId);
-	if (!Runtime || !Runtime->Execute(GetOwner(), RuntimeParams))
+	if (!Runtime || !Runtime->Execute(GetOwner(), RuntimeParams, DebugDrawSeconds))
 	{
 		BroadcastAbilityEvent(AbilityId, TEXT("CastFailed"), TEXT("runtime execute failed"));
 		return false;
@@ -122,67 +133,10 @@ bool UElementAbilityComponent::CastAbilityById(FName AbilityId)
 	Energy -= Definition->EnergyCost;
 	CooldownEndTimes.Add(AbilityId, GetWorld()->GetTimeSeconds() + Definition->CooldownSeconds);
 
-	// VFX hookup point (stub): once a Niagara asset is assigned to CastVFX it spawns here.
-	// Until then the cast shape is debug-drawn inside ApplyAbilityEffects.
-	ApplyAbilityEffects(*Definition);
-
 	BroadcastAbilityEvent(AbilityId, TEXT("CastStarted"),
 		FString::Printf(TEXT("W=%.0f Arc=%.0f R=%.0f Dmg=%.0f"),
-			RuntimeParams.Width, RuntimeParams.Arc, RuntimeParams.Range, Definition->Damage));
+			RuntimeParams.Width, RuntimeParams.Arc, RuntimeParams.Range, Definition->Affect.Damage));
 	return true;
-}
-
-void UElementAbilityComponent::ApplyAbilityEffects(const FNovaAbilityGraphDef& Definition)
-{
-	AActor* Owner = GetOwner();
-	UWorld* World = GetWorld();
-	if (!Owner || !World)
-	{
-		return;
-	}
-
-	const FVector Origin = Owner->GetActorLocation();
-	const FVector Direction = RuntimeParams.Direction.GetSafeNormal();
-	const float Range = RuntimeParams.Range;
-	const float HalfArcRad = FMath::DegreesToRadians(FMath::Max(RuntimeParams.Arc, 1.f) * 0.5f);
-
-	// Placeholder VFX: direction line, range/arc cone, width sphere at the far end.
-	DrawDebugLine(World, Origin, Origin + Direction * Range, FColor::Magenta, false, DebugDrawSeconds, 0, 3.f);
-	DrawDebugCone(World, Origin, Direction, Range, HalfArcRad, HalfArcRad, 16, FColor::Purple, false, DebugDrawSeconds);
-	DrawDebugSphere(World, Origin + Direction * Range, FMath::Max(RuntimeParams.Width * 0.5f, 10.f), 12,
-		FColor::Cyan, false, DebugDrawSeconds);
-
-	// Hit check: everything inside the range sphere whose bearing falls within the arc.
-	TArray<FOverlapResult> Overlaps;
-	FCollisionObjectQueryParams ObjectParams;
-	ObjectParams.AddObjectTypesToQuery(ECC_Pawn);
-	ObjectParams.AddObjectTypesToQuery(ECC_WorldDynamic);
-	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(NovaAbilityCast), /*bTraceComplex=*/false, Owner);
-	World->OverlapMultiByObjectType(Overlaps, Origin, FQuat::Identity, ObjectParams,
-		FCollisionShape::MakeSphere(Range), QueryParams);
-
-	const float MinDot = FMath::Cos(HalfArcRad);
-	TSet<AActor*> DamagedActors;
-	for (const FOverlapResult& Overlap : Overlaps)
-	{
-		AActor* Target = Overlap.GetActor();
-		if (!Target || Target == Owner || DamagedActors.Contains(Target))
-		{
-			continue;
-		}
-
-		const FVector ToTarget = Target->GetActorLocation() - Origin;
-		if (ToTarget.IsNearlyZero() || FVector::DotProduct(ToTarget.GetSafeNormal(), Direction) < MinDot)
-		{
-			continue;
-		}
-
-		DamagedActors.Add(Target);
-		const APawn* OwnerPawn = Cast<APawn>(Owner);
-		UGameplayStatics::ApplyDamage(Target, Definition.Damage,
-			OwnerPawn ? OwnerPawn->GetController() : nullptr, Owner, nullptr);
-		DrawDebugSphere(World, Target->GetActorLocation(), 40.f, 12, FColor::Red, false, DebugDrawSeconds);
-	}
 }
 
 void UElementAbilityComponent::BroadcastAbilityEvent(FName AbilityId, FName EventType, const FString& Detail)

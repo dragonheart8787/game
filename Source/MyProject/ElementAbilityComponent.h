@@ -97,9 +97,6 @@ protected:
 
 private:
 
-	/** Debug-draw the cast shape and apply damage to targets in the range/arc cone. */
-	void ApplyAbilityEffects(const FNovaAbilityGraphDef& Definition);
-
 	void BroadcastAbilityEvent(FName AbilityId, FName EventType, const FString& Detail);
 
 	/** Registered graph definitions by ability id. */
