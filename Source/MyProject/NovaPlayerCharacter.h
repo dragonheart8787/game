@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/TimerHandle.h"
 #include "GameFramework/Character.h"
 #include "NovaPlayerCharacter.generated.h"
 
@@ -117,8 +118,17 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Dash")
 	float DashCooldown = 1.5f;
 
+	/** How long the dash burst lasts before normal physics take back over (s). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Dash", meta=(ClampMin="0.05", UIMin="0.05"))
+	float DashDurationSeconds = 0.2f;
+
 private:
+
+	/** Ends the dash burst: caps lateral speed back to MaxWalkSpeed, leaving Z untouched. */
+	void EndDash();
 
 	/** World time (seconds) when the next dash becomes available. */
 	double NextDashTime = 0.0;
+
+	FTimerHandle DashEndTimerHandle;
 };

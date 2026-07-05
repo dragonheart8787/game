@@ -15,6 +15,7 @@
 #include "InputMappingContext.h"
 #include "NovaDebugSubsystem.h"
 #include "StoryDirectorSubsystem.h"
+#include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY(LogNovaCharacter);
 
@@ -207,12 +208,32 @@ void ANovaPlayerCharacter::Dash()
 		Direction = GetActorForwardVector().GetSafeNormal2D();
 	}
 
-	// Impulse sized so the dash carries roughly DashDistance against ground friction.
-	constexpr float DashDurationSeconds = 0.2f;
-	LaunchCharacter(Direction * (DashDistance / DashDurationSeconds), true, false);
+	// Impulse sized so the dash carries roughly DashDistance over DashDurationSeconds.
+	// LaunchCharacter always puts the character into Falling; on the ground it lands and
+	// friction brakes it, but in the air nothing decays lateral velocity, so EndDash has
+	// to cap the burst or an airborne dash keeps flying until landing.
+	// Floor the duration: BP writes bypass ClampMin, and 0 would mean a division by zero
+	// here plus a timer that never fires (SetTimer with rate <= 0 only clears).
+	const float Duration = FMath::Max(DashDurationSeconds, 0.05f);
+	LaunchCharacter(Direction * (DashDistance / Duration), true, false);
+	GetWorldTimerManager().SetTimer(DashEndTimerHandle, this, &ANovaPlayerCharacter::EndDash,
+		Duration, false);
 
 	// Dash direction doubles as the ability aim direction.
 	ElementAbilityComp->SetRuntimeDirection(Direction);
+}
+
+void ANovaPlayerCharacter::EndDash()
+{
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	const float MaxSpeed = Movement->MaxWalkSpeed;
+	const float LateralSpeed = Movement->Velocity.Size2D();
+	if (LateralSpeed > MaxSpeed)
+	{
+		Movement->Velocity = Movement->Velocity.GetClampedToMaxSize2D(MaxSpeed);
+		UE_LOG(LogNovaCharacter, Log, TEXT("EndDash: lateral speed %.0f capped to %.0f"),
+			LateralSpeed, MaxSpeed);
+	}
 }
 
 void ANovaPlayerCharacter::CastAbility1()
