@@ -4,6 +4,7 @@
 
 #include "AbilityGraphRuntime.h"
 #include "IdentityOverrideComponent.h"
+#include "NovaAbilityDataAsset.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 
@@ -12,6 +13,13 @@ DEFINE_LOG_CATEGORY(LogNovaAbility);
 UElementAbilityComponent::UElementAbilityComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
+
+	// Patch 4: which abilities exist is still C++'s call, but every tunable
+	// value now lives in these Content assets (edit + save, no recompile).
+	AbilityAssets.Add(TEXT("Slash"), TSoftObjectPtr<UNovaAbilityDataAsset>(
+		FSoftObjectPath(TEXT("/Game/Data/Abilities/DA_Ability_Slash.DA_Ability_Slash"))));
+	AbilityAssets.Add(TEXT("Edgewall"), TSoftObjectPtr<UNovaAbilityDataAsset>(
+		FSoftObjectPath(TEXT("/Game/Data/Abilities/DA_Ability_Edgewall.DA_Ability_Edgewall"))));
 }
 
 void UElementAbilityComponent::BeginPlay()
@@ -20,43 +28,46 @@ void UElementAbilityComponent::BeginPlay()
 
 	Energy = MaxEnergy;
 
-	// Vertical slice: register the two demo abilities as node compositions.
-	// Real defs load from /Content/Data/Abilities JSON/DataAssets later.
-	if (!Abilities.Contains(TEXT("Slash")))
+	for (const TPair<FName, TSoftObjectPtr<UNovaAbilityDataAsset>>& Pair : AbilityAssets)
 	{
-		// Slash = Cone shape + Instant path + Damage affect. Geometry inherits
-		// the runtime params (overrides stay 0) so player shaping applies.
-		FNovaAbilityGraphDef Slash;
-		Slash.AbilityId = TEXT("Slash");
-		Slash.DisplayName = NSLOCTEXT("Nova", "AbilitySlash", "Slash");
-		Slash.CooldownSeconds = 0.75f;
-		Slash.EnergyCost = 10.f;
-		Slash.Shape.ShapeType = ENovaAbilityShapeType::Cone;
-		Slash.Path.PathType = ENovaAbilityPathType::Instant;
-		Slash.Spawn.SpawnType = ENovaAbilitySpawnType::None;
-		Slash.Affect.AffectType = ENovaAbilityAffectType::Damage;
-		Slash.Affect.Damage = 20.f;
-		RegisterAbility(Slash);
+		if (!Abilities.Contains(Pair.Key))
+		{
+			LoadAndRegisterAbilityAsset(Pair.Key);
+		}
 	}
-	if (!Abilities.Contains(TEXT("Edgewall")))
+}
+
+bool UElementAbilityComponent::LoadAndRegisterAbilityAsset(FName AbilityId)
+{
+	const TSoftObjectPtr<UNovaAbilityDataAsset>* AssetPtr = AbilityAssets.Find(AbilityId);
+	if (!AssetPtr)
 	{
-		// Edgewall = Line shape + Linear path + BlockingWall spawn. The wall's
-		// own collision does the blocking, so Affect stays None.
-		FNovaAbilityGraphDef Edgewall;
-		Edgewall.AbilityId = TEXT("Edgewall");
-		Edgewall.DisplayName = NSLOCTEXT("Nova", "AbilityEdgewall", "Edgewall");
-		Edgewall.CooldownSeconds = 3.f;
-		Edgewall.EnergyCost = 25.f;
-		Edgewall.Shape.ShapeType = ENovaAbilityShapeType::Line;
-		Edgewall.Path.PathType = ENovaAbilityPathType::Linear;
-		Edgewall.Path.TravelDistance = 300.f;
-		Edgewall.Spawn.SpawnType = ENovaAbilitySpawnType::BlockingWall;
-		Edgewall.Spawn.WallHalfExtent = FVector(30.f, 200.f, 150.f);
-		Edgewall.Spawn.LifeSeconds = 5.f;
-		Edgewall.Affect.AffectType = ENovaAbilityAffectType::None;
-		Edgewall.Affect.Damage = 0.f;
-		RegisterAbility(Edgewall);
+		return false;
 	}
+
+	const UNovaAbilityDataAsset* Asset = AssetPtr->LoadSynchronous();
+	if (!Asset)
+	{
+		UE_LOG(LogNovaAbility, Warning, TEXT("LoadAndRegisterAbilityAsset: '%s' failed to load (%s)"),
+			*AbilityId.ToString(), *AssetPtr->ToSoftObjectPath().ToString());
+		return false;
+	}
+
+	if (Asset->Definition.AbilityId != AbilityId)
+	{
+		UE_LOG(LogNovaAbility, Warning,
+			TEXT("Ability asset '%s' declares AbilityId '%s' but is mapped as '%s'; the map key wins"),
+			*Asset->GetName(), *Asset->Definition.AbilityId.ToString(), *AbilityId.ToString());
+	}
+
+	// The map key is authoritative so CastAbilityById(key) always matches.
+	FNovaAbilityGraphDef Definition = Asset->Definition;
+	Definition.AbilityId = AbilityId;
+	RegisterAbility(Definition);
+
+	UE_LOG(LogNovaAbility, Log, TEXT("Loaded ability '%s' from %s"),
+		*AbilityId.ToString(), *Asset->GetPathName());
+	return true;
 }
 
 void UElementAbilityComponent::TickComponent(float DeltaTime, ELevelTick TickType,
@@ -85,6 +96,10 @@ void UElementAbilityComponent::RegisterAbility(const FNovaAbilityGraphDef& Defin
 bool UElementAbilityComponent::CastAbilityById(FName AbilityId)
 {
 	const FNovaAbilityGraphDef* Definition = Abilities.Find(AbilityId);
+	if (!Definition && LoadAndRegisterAbilityAsset(AbilityId))
+	{
+		Definition = Abilities.Find(AbilityId);
+	}
 	if (!Definition)
 	{
 		UE_LOG(LogNovaAbility, Warning, TEXT("CastAbilityById: unknown ability '%s'"), *AbilityId.ToString());

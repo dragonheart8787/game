@@ -7,6 +7,7 @@
 #include "AbilityGraphTypes.h"
 #include "ElementAbilityComponent.generated.h"
 
+class UNovaAbilityDataAsset;
 class UNovaAbilityGraphRuntime;
 class UNiagaraSystem;
 
@@ -74,6 +75,15 @@ public:
 
 	// --- Tuning ---
 
+	/**
+	 * AbilityId -> DataAsset providing that ability's definition (Patch 4).
+	 * The constructor seeds the default Slash/Edgewall mapping (C++ decides
+	 * WHICH abilities exist); every tunable value lives in the assets under
+	 * /Game/Data/Abilities, so tuning is an editor save, not a recompile.
+	 */
+	UPROPERTY(EditAnywhere, Category="Ability")
+	TMap<FName, TSoftObjectPtr<UNovaAbilityDataAsset>> AbilityAssets;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability|Energy")
 	float MaxEnergy = 100.f;
 
@@ -96,6 +106,9 @@ protected:
 		FActorComponentTickFunction* ThisTickFunction) override;
 
 private:
+
+	/** Load AbilityId's entry from AbilityAssets and register its definition. */
+	bool LoadAndRegisterAbilityAsset(FName AbilityId);
 
 	void BroadcastAbilityEvent(FName AbilityId, FName EventType, const FString& Detail);
 
