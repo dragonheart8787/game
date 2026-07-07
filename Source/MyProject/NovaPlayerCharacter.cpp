@@ -194,6 +194,14 @@ void ANovaPlayerCharacter::Dash()
 		return;
 	}
 
+	// Identity constraint (Patch 5): some identities cannot dash.
+	if (IdentityOverrideComp && IdentityOverrideComp->IsDashLocked())
+	{
+		UE_LOG(LogNovaCharacter, Log, TEXT("Dash blocked by identity override '%s'"),
+			*IdentityOverrideComp->GetActiveIdentityId().ToString());
+		return;
+	}
+
 	const double Now = GetWorld()->GetTimeSeconds();
 	if (Now < NextDashTime)
 	{
@@ -216,6 +224,7 @@ void ANovaPlayerCharacter::Dash()
 	// here plus a timer that never fires (SetTimer with rate <= 0 only clears).
 	const float Duration = FMath::Max(DashDurationSeconds, 0.05f);
 	LaunchCharacter(Direction * (DashDistance / Duration), true, false);
+	UE_LOG(LogNovaCharacter, Log, TEXT("Dash executed (dir %s)"), *Direction.ToCompactString());
 	GetWorldTimerManager().SetTimer(DashEndTimerHandle, this, &ANovaPlayerCharacter::EndDash,
 		Duration, false);
 

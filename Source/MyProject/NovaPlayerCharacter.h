@@ -35,6 +35,10 @@ public:
 	FORCEINLINE UElementAbilityComponent* GetElementAbilityComp() const { return ElementAbilityComp; }
 	FORCEINLINE UIdentityOverrideComponent* GetIdentityOverrideComp() const { return IdentityOverrideComp; }
 
+	/** Dash input handler. Public so dev test drivers can exercise the
+	 *  control-mask and identity dash-lock gates directly. */
+	void Dash();
+
 protected:
 
 	virtual void NotifyControllerChanged() override;
@@ -56,7 +60,6 @@ protected:
 	void Look(const FInputActionValue& Value);
 	void JumpStart();
 	void JumpStop();
-	void Dash();
 	void CastAbility1();
 	void CastAbility2();
 	void TriggerStoryA();

@@ -28,6 +28,15 @@ void UElementAbilityComponent::BeginPlay()
 
 	Energy = MaxEnergy;
 
+	// Snapshot the configured loadout (C++ defaults or BP overrides) so a Full
+	// Identity Override can always be reverted to it. Skip if SetAbilityLoadout
+	// already captured it — an override applied before BeginPlay must not
+	// become the revert baseline.
+	if (DefaultAbilityAssets.IsEmpty())
+	{
+		DefaultAbilityAssets = AbilityAssets;
+	}
+
 	for (const TPair<FName, TSoftObjectPtr<UNovaAbilityDataAsset>>& Pair : AbilityAssets)
 	{
 		if (!Abilities.Contains(Pair.Key))
@@ -35,6 +44,41 @@ void UElementAbilityComponent::BeginPlay()
 			LoadAndRegisterAbilityAsset(Pair.Key);
 		}
 	}
+}
+
+void UElementAbilityComponent::SetAbilityLoadout(const TMap<FName, TSoftObjectPtr<UNovaAbilityDataAsset>>& NewAbilityAssets)
+{
+	// First swap before BeginPlay's snapshot must still record the real default.
+	if (DefaultAbilityAssets.IsEmpty())
+	{
+		DefaultAbilityAssets = AbilityAssets;
+	}
+	AbilityAssets = NewAbilityAssets;
+	Abilities.Empty();
+	Runtimes.Empty();
+	CooldownEndTimes.Empty();
+
+	FString Ids;
+	for (const TPair<FName, TSoftObjectPtr<UNovaAbilityDataAsset>>& Pair : AbilityAssets)
+	{
+		if (LoadAndRegisterAbilityAsset(Pair.Key))
+		{
+			Ids += FString::Printf(TEXT("%s "), *Pair.Key.ToString());
+		}
+	}
+	UE_LOG(LogNovaAbility, Log, TEXT("Ability loadout replaced: %d abilities (%s)"),
+		Abilities.Num(), Ids.TrimEnd().IsEmpty() ? TEXT("<none>") : *Ids.TrimEnd());
+}
+
+void UElementAbilityComponent::ResetAbilityLoadoutToDefault()
+{
+	if (DefaultAbilityAssets.IsEmpty())
+	{
+		UE_LOG(LogNovaAbility, Warning, TEXT("ResetAbilityLoadoutToDefault: no default captured (BeginPlay not run yet?)"));
+		return;
+	}
+	UE_LOG(LogNovaAbility, Log, TEXT("Ability loadout reset to default"));
+	SetAbilityLoadout(DefaultAbilityAssets);
 }
 
 bool UElementAbilityComponent::LoadAndRegisterAbilityAsset(FName AbilityId)

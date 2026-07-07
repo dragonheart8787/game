@@ -79,6 +79,14 @@ private:
 
 	void EndCurrentStory();
 
+	/** Identity Override hookup: run the beat's IdentityAction on the player. */
+	void ApplyBeatIdentityAction(const FNovaStoryBeat& Beat);
+
+	class UIdentityOverrideComponent* GetPlayerIdentityComponent() const;
+
+	/** True once the running story applied an identity override; story end reverts leftovers. */
+	bool bStoryDroveIdentityOverride = false;
+
 	/** Auto-advances beats after each beat's DurationSeconds. */
 	FTimerHandle BeatTimerHandle;
 

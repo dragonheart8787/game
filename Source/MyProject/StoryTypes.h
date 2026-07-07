@@ -29,6 +29,23 @@ enum class ENovaStoryType : uint8
 	TypeB
 };
 
+/**
+ * Identity Override hookup a beat can run when it starts (Patch 5).
+ * Kept as its own enum (not ENovaIdentityOverrideMode) so StoryTypes stays
+ * decoupled from the component header and "no action" is distinct from
+ * "apply mode None".
+ */
+UENUM(BlueprintType)
+enum class ENovaBeatIdentityAction : uint8
+{
+	/** Beat does not touch identity state. */
+	None,
+	ApplyFull,
+	ApplyPartial,
+	ApplyLens,
+	Revert
+};
+
 /** One beat inside a story timeline. */
 USTRUCT(BlueprintType)
 struct FNovaStoryBeat
@@ -43,6 +60,14 @@ struct FNovaStoryBeat
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Story")
 	ENovaControlMask ControlMask = ENovaControlMask::None;
+
+	/** Identity Override action fired when the beat starts (Director hookup). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Story")
+	ENovaBeatIdentityAction IdentityAction = ENovaBeatIdentityAction::None;
+
+	/** Identity handed to the action (ignored for None/Revert). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Story")
+	FName IdentityId;
 };
 
 /** Definition of one story (Type A or Type B). */

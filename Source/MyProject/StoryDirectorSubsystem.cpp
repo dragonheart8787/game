@@ -3,6 +3,9 @@
 #include "StoryDirectorSubsystem.h"
 
 #include "Engine/GameInstance.h"
+#include "GameFramework/Pawn.h"
+#include "IdentityOverrideComponent.h"
+#include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
 #include "WorldStateSubsystem.h"
 
@@ -29,13 +32,25 @@ void UStoryDirectorSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		RegisterStory(StoryA);
 	}
 	{
+		// Type B vignette = the doc's canonical Lens Override use case, so its
+		// opening beat carries the Identity hookup (Patch 5).
 		FNovaStoryDef StoryB;
 		StoryB.StoryId = TEXT("StoryB_Demo");
 		StoryB.StoryType = ENovaStoryType::TypeB;
-		StoryB.Beats = {
-			{ TEXT("LensIn"), 0.5f, ENovaControlMask::Hold },
-			{ TEXT("Observe"), 3.f, ENovaControlMask::Guide },
-		};
+
+		FNovaStoryBeat LensIn;
+		LensIn.BeatName = TEXT("LensIn");
+		LensIn.DurationSeconds = 0.5f;
+		LensIn.ControlMask = ENovaControlMask::Hold;
+		LensIn.IdentityAction = ENovaBeatIdentityAction::ApplyLens;
+		LensIn.IdentityId = TEXT("TestLens");
+
+		FNovaStoryBeat Observe;
+		Observe.BeatName = TEXT("Observe");
+		Observe.DurationSeconds = 3.f;
+		Observe.ControlMask = ENovaControlMask::Guide;
+
+		StoryB.Beats = { LensIn, Observe };
 		RegisterStory(StoryB);
 	}
 }
@@ -147,6 +162,7 @@ void UStoryDirectorSubsystem::EnterBeat(int32 BeatIndex)
 	const FNovaStoryBeat& Beat = Story.Beats[BeatIndex];
 	SetControlMask(Beat.ControlMask);
 	OnStoryBeat.Broadcast(CurrentStoryId, BeatIndex);
+	ApplyBeatIdentityAction(Beat);
 
 	// Beats auto-advance on a timer for the slice; sequencer/dialogue pacing comes later.
 	if (Beat.DurationSeconds > 0.f)
@@ -159,9 +175,70 @@ void UStoryDirectorSubsystem::EnterBeat(int32 BeatIndex)
 		*CurrentStoryId.ToString(), BeatIndex, *Beat.BeatName.ToString(), static_cast<int32>(Beat.ControlMask));
 }
 
+void UStoryDirectorSubsystem::ApplyBeatIdentityAction(const FNovaStoryBeat& Beat)
+{
+	if (Beat.IdentityAction == ENovaBeatIdentityAction::None)
+	{
+		return;
+	}
+
+	UIdentityOverrideComponent* Identity = GetPlayerIdentityComponent();
+	if (!Identity)
+	{
+		UE_LOG(LogNovaStory, Warning, TEXT("[Director] beat '%s' identity action skipped: no IdentityOverrideComponent on player pawn"),
+			*Beat.BeatName.ToString());
+		return;
+	}
+
+	switch (Beat.IdentityAction)
+	{
+	case ENovaBeatIdentityAction::ApplyFull:
+		Identity->ApplyFullOverride(Beat.IdentityId);
+		bStoryDroveIdentityOverride = true;
+		break;
+	case ENovaBeatIdentityAction::ApplyPartial:
+		Identity->ApplyPartialOverride(Beat.IdentityId);
+		bStoryDroveIdentityOverride = true;
+		break;
+	case ENovaBeatIdentityAction::ApplyLens:
+		Identity->ApplyLensOverride(Beat.IdentityId);
+		bStoryDroveIdentityOverride = true;
+		break;
+	case ENovaBeatIdentityAction::Revert:
+		Identity->RevertOverride();
+		break;
+	default:
+		break;
+	}
+
+	UE_LOG(LogNovaStory, Log, TEXT("[Director] story '%s' beat '%s' -> identity action %s ('%s')"),
+		*CurrentStoryId.ToString(), *Beat.BeatName.ToString(),
+		*UEnum::GetValueAsString(Beat.IdentityAction), *Beat.IdentityId.ToString());
+}
+
+UIdentityOverrideComponent* UStoryDirectorSubsystem::GetPlayerIdentityComponent() const
+{
+	const APawn* Pawn = UGameplayStatics::GetPlayerPawn(GetGameInstance()->GetWorld(), 0);
+	return Pawn ? Pawn->FindComponentByClass<UIdentityOverrideComponent>() : nullptr;
+}
+
 void UStoryDirectorSubsystem::EndCurrentStory()
 {
 	GetGameInstance()->GetTimerManager().ClearTimer(BeatTimerHandle);
+
+	// A story that drove an identity override must not leak it past its end.
+	if (bStoryDroveIdentityOverride)
+	{
+		bStoryDroveIdentityOverride = false;
+		if (UIdentityOverrideComponent* Identity = GetPlayerIdentityComponent())
+		{
+			if (Identity->GetOverrideMode() != ENovaIdentityOverrideMode::None)
+			{
+				UE_LOG(LogNovaStory, Log, TEXT("[Director] story end: reverting lingering identity override"));
+				Identity->RevertOverride();
+			}
+		}
+	}
 
 	const FName FinishedStoryId = CurrentStoryId;
 

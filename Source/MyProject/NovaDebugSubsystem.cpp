@@ -3,6 +3,7 @@
 #include "NovaDebugSubsystem.h"
 
 #include "ElementAbilityComponent.h"
+#include "IdentityOverrideComponent.h"
 #include "StoryDirectorSubsystem.h"
 #include "WorldStateSubsystem.h"
 #include "Engine/Engine.h"
@@ -105,5 +106,14 @@ void UNovaDebugSubsystem::DrawOverlay(float DeltaTime) const
 		const FString& LastEvent = Abilities->GetLastAbilityEventText();
 		DrawLine(Line++, FString::Printf(TEXT("[Nova] LastAbility: %s"),
 			LastEvent.IsEmpty() ? TEXT("<none>") : *LastEvent), FColor::Yellow);
+	}
+
+	if (const UIdentityOverrideComponent* Identity = Pawn ? Pawn->FindComponentByClass<UIdentityOverrideComponent>() : nullptr)
+	{
+		DrawLine(Line++, FString::Printf(TEXT("[Nova] Identity: %s | Mode: %s | Exposure: %.0f/%.0f | Dash: %s"),
+			Identity->GetActiveIdentityId().IsNone() ? TEXT("<none>") : *Identity->GetActiveIdentityId().ToString(),
+			*UEnum::GetValueAsString(Identity->GetOverrideMode()),
+			Identity->GetExposure(), Identity->GetExposureThreshold(),
+			Identity->IsDashLocked() ? TEXT("LOCKED") : TEXT("free")), FColor::Orange);
 	}
 }

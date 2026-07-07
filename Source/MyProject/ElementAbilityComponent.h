@@ -37,6 +37,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Ability")
 	bool CastAbilityById(FName AbilityId);
 
+	// --- Loadout swapping (Patch 5: Full Identity Override) ---
+
+	/** Replace the active loadout with another AbilityId -> DataAsset map.
+	 *  Drops all current abilities, runtimes and cooldowns, then registers the
+	 *  new set from its DataAssets. */
+	UFUNCTION(BlueprintCallable, Category="Ability")
+	void SetAbilityLoadout(const TMap<FName, TSoftObjectPtr<UNovaAbilityDataAsset>>& NewAbilityAssets);
+
+	/** Restore the loadout AbilityAssets held at BeginPlay (identity revert). */
+	UFUNCTION(BlueprintCallable, Category="Ability")
+	void ResetAbilityLoadoutToDefault();
+
 	// --- Runtime shaping ---
 
 	UFUNCTION(BlueprintCallable, Category="Ability|Runtime")
@@ -114,6 +126,9 @@ private:
 
 	/** Registered graph definitions by ability id. */
 	TMap<FName, FNovaAbilityGraphDef> Abilities;
+
+	/** AbilityAssets as they were at BeginPlay; ResetAbilityLoadoutToDefault target. */
+	TMap<FName, TSoftObjectPtr<UNovaAbilityDataAsset>> DefaultAbilityAssets;
 
 	/** Per-ability runtime executors. */
 	UPROPERTY()
