@@ -9,6 +9,8 @@
 #include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
 #include "NovaBlockingWall.h"
+#include "NovaDummyTarget.h"
+#include "NovaTetherLink.h"
 
 void UNovaAbilityGraphRuntime::Initialize(const FNovaAbilityGraphDef& InDefinition)
 {
@@ -57,8 +59,12 @@ bool UNovaAbilityGraphRuntime::Execute(AActor* Instigator, const FNovaAbilityRun
 	// 3) Spawn — leave persistent actors behind.
 	ExecuteSpawn(World, EffectOrigin, Direction);
 
-	// 4) Affect — apply effects to targets inside the shape.
-	ExecuteAffect(World, Instigator, EffectOrigin, Direction, Range, HalfArcRad, DebugDrawSeconds);
+	// 4) Affect — apply effects to targets inside the shape (records who was hit).
+	TArray<AActor*> AffectedActors;
+	ExecuteAffect(World, Instigator, EffectOrigin, Direction, Range, HalfArcRad, DebugDrawSeconds, AffectedActors);
+
+	// 5) Constraint — anchor the effect to a hit target (tether follow).
+	ExecuteConstraint(World, Instigator, AffectedActors);
 
 	return true;
 }
@@ -128,11 +134,14 @@ void UNovaAbilityGraphRuntime::ExecuteSpawn(UWorld* World, const FVector& Effect
 }
 
 void UNovaAbilityGraphRuntime::ExecuteAffect(UWorld* World, AActor* Instigator, const FVector& EffectOrigin,
-	const FVector& Direction, float Range, float HalfArcRad, float DebugDrawSeconds) const
+	const FVector& Direction, float Range, float HalfArcRad, float DebugDrawSeconds,
+	TArray<AActor*>& OutAffected) const
 {
-	if (Definition.Affect.AffectType != ENovaAbilityAffectType::Damage)
+	const ENovaAbilityAffectType AffectType = Definition.Affect.AffectType;
+	if (AffectType != ENovaAbilityAffectType::Damage && AffectType != ENovaAbilityAffectType::Slow)
 	{
-		// Block is purely physical — the spawned wall's collision does the work.
+		// None / Block: nothing to detect. Block is purely physical — the spawned
+		// wall's collision does the work.
 		return;
 	}
 
@@ -149,11 +158,11 @@ void UNovaAbilityGraphRuntime::ExecuteAffect(UWorld* World, AActor* Instigator, 
 	const bool bUseArcFilter = Definition.Shape.ShapeType == ENovaAbilityShapeType::Cone;
 	const float MinDot = FMath::Cos(HalfArcRad);
 	const APawn* InstigatorPawn = Cast<APawn>(Instigator);
-	TSet<AActor*> DamagedActors;
+	TSet<AActor*> HitActors;
 	for (const FOverlapResult& Overlap : Overlaps)
 	{
 		AActor* Target = Overlap.GetActor();
-		if (!Target || Target == Instigator || DamagedActors.Contains(Target))
+		if (!Target || Target == Instigator || HitActors.Contains(Target))
 		{
 			continue;
 		}
@@ -165,9 +174,64 @@ void UNovaAbilityGraphRuntime::ExecuteAffect(UWorld* World, AActor* Instigator, 
 			continue;
 		}
 
-		DamagedActors.Add(Target);
-		UGameplayStatics::ApplyDamage(Target, Definition.Affect.Damage,
-			InstigatorPawn ? InstigatorPawn->GetController() : nullptr, Instigator, nullptr);
-		DrawDebugSphere(World, Target->GetActorLocation(), 40.f, 12, FColor::Red, false, DebugDrawSeconds);
+		HitActors.Add(Target); // dedupe: never process the same actor twice this cast
+
+		if (AffectType == ENovaAbilityAffectType::Damage)
+		{
+			OutAffected.Add(Target);
+			UGameplayStatics::ApplyDamage(Target, Definition.Affect.Damage,
+				InstigatorPawn ? InstigatorPawn->GetController() : nullptr, Instigator, nullptr);
+			DrawDebugSphere(World, Target->GetActorLocation(), 40.f, 12, FColor::Red, false, DebugDrawSeconds);
+		}
+		else // Slow — only actors that can actually be slowed count as affected, so a
+		{    // Constraint tethers to a real target, not an incidental trigger volume.
+			ANovaDummyTarget* Dummy = Cast<ANovaDummyTarget>(Target);
+			if (!Dummy)
+			{
+				continue;
+			}
+			OutAffected.Add(Target);
+			Dummy->ApplySlow(Definition.Affect.SlowSpeedMultiplier, Definition.Affect.SlowDurationSeconds);
+			DrawDebugSphere(World, Target->GetActorLocation(), 40.f, 12, FColor::Purple, false, DebugDrawSeconds);
+		}
+	}
+}
+
+void UNovaAbilityGraphRuntime::ExecuteConstraint(UWorld* World, AActor* Instigator,
+	const TArray<AActor*>& AffectedActors) const
+{
+	if (Definition.Constraint.ConstraintType != ENovaAbilityConstraintType::TetherToActor
+		|| !World || !Instigator || AffectedActors.Num() == 0)
+	{
+		return;
+	}
+
+	// Tether to the affected actor nearest the instigator — a single, deterministic
+	// anchor for the minimal Bind. (Multi-tether can come later if a fusion needs it.)
+	const FVector Origin = Instigator->GetActorLocation();
+	AActor* Anchor = nullptr;
+	double BestDistSq = TNumericLimits<double>::Max();
+	for (AActor* Actor : AffectedActors)
+	{
+		if (!Actor)
+		{
+			continue;
+		}
+		const double DistSq = FVector::DistSquared(Actor->GetActorLocation(), Origin);
+		if (DistSq < BestDistSq)
+		{
+			BestDistSq = DistSq;
+			Anchor = Actor;
+		}
+	}
+	if (!Anchor)
+	{
+		return;
+	}
+
+	if (ANovaTetherLink* Link = World->SpawnActor<ANovaTetherLink>(
+			ANovaTetherLink::StaticClass(), FTransform(Origin)))
+	{
+		Link->InitTether(Instigator, Anchor, Definition.Constraint.TetherDurationSeconds);
 	}
 }

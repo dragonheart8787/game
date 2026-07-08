@@ -7,7 +7,7 @@
 
 /**
  * Node categories that make up an ability graph.
- * Shape/Path/Spawn/Affect have typed node structs below; Constraint/Interact/
+ * Shape/Path/Constraint/Spawn/Affect have typed node structs below; Interact/
  * Cost/Cooldown are reserved here so adding them later doesn't break the enum,
  * and their typed structs land when those systems are built (CooldownSeconds /
  * EnergyCost on FNovaAbilityGraphDef stand in for Cost/Cooldown until then).
@@ -64,7 +64,19 @@ enum class ENovaAbilityAffectType : uint8
 	/** ApplyDamage to every actor in the shape — Slash. */
 	Damage,
 	/** Pure physical blocking; the spawned actor's collision does the work. */
-	Block
+	Block,
+	/** Scale the target's move speed down for a duration, then auto-restore — Bind.
+	 *  (Appended last on purpose: keeps Damage=1/Block=2 stable for existing assets.) */
+	Slow
+};
+
+/** How the ability's effect is fixed or pulled toward an object / location. */
+UENUM(BlueprintType)
+enum class ENovaAbilityConstraintType : uint8
+{
+	None,
+	/** Anchor the effect to the hit actor and follow it for a duration — Bind. */
+	TetherToActor
 };
 
 /** Runtime-adjustable parameters shared by every ability instance. */
@@ -177,10 +189,37 @@ struct FNovaAbilityAffectNode
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability")
 	float Damage = 20.f;
+
+	/** Slow: fraction of base move speed the target keeps while slowed (0..1). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability", meta=(ClampMin="0.0", ClampMax="1.0"))
+	float SlowSpeedMultiplier = 0.5f;
+
+	/** Slow: seconds the slow lasts before the target auto-restores. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability", meta=(ClampMin="0.0"))
+	float SlowDurationSeconds = 3.f;
 };
 
 /**
- * Full definition of one composed ability: Shape -> Path -> Spawn -> Affect.
+ * Constraint node: how the resolved effect is anchored/pulled to a target.
+ * TetherToActor spawns a follow-link on the hit actor for TetherDurationSeconds
+ * (the "chain" visual). Pure serializable data, mirroring the other nodes.
+ */
+USTRUCT(BlueprintType)
+struct FNovaAbilityConstraintNode
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability")
+	ENovaAbilityConstraintType ConstraintType = ENovaAbilityConstraintType::None;
+
+	/** TetherToActor: seconds the tether follows the target before releasing. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability", meta=(ClampMin="0.0"))
+	float TetherDurationSeconds = 3.f;
+};
+
+/**
+ * Full definition of one composed ability: Shape -> Path -> Spawn -> Affect,
+ * with an optional Constraint that anchors the effect to a hit target.
  * Kept as flat data (no inheritance) so defs can later serialize to
  * DataAssets / JSON for the Ability Graph editor.
  */
@@ -206,6 +245,9 @@ struct FNovaAbilityGraphDef
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability")
 	FNovaAbilityAffectNode Affect;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability")
+	FNovaAbilityConstraintNode Constraint;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability")
 	float CooldownSeconds = 1.f;

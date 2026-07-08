@@ -10,6 +10,41 @@
 
 DEFINE_LOG_CATEGORY(LogNovaAbility);
 
+namespace
+{
+	/**
+	 * Bind (Patch 6): Sphere(judge range) -> Instant -> Slow(50%/3s) -> Tether(3s).
+	 * Built in C++ so the ability is always registered and headlessly testable —
+	 * mirrors how Edgewall shipped in Patch 3 before Patch 4 moved tuning to a
+	 * DataAsset. A /Game/Data/Abilities/DA_Ability_Bind mapping can override this.
+	 */
+	FNovaAbilityGraphDef MakeBindDefaultDef()
+	{
+		FNovaAbilityGraphDef Def;
+		Def.AbilityId = TEXT("Bind");
+		Def.DisplayName = FText::FromString(TEXT("Bind"));
+
+		Def.Shape.ShapeType = ENovaAbilityShapeType::Sphere;
+		Def.Shape.RadiusOverride = 400.f; // visual sphere
+		Def.Shape.RangeOverride = 400.f;  // hit-detection radius (== visual)
+
+		Def.Path.PathType = ENovaAbilityPathType::Instant;
+
+		Def.Spawn.SpawnType = ENovaAbilitySpawnType::None;
+
+		Def.Affect.AffectType = ENovaAbilityAffectType::Slow;
+		Def.Affect.SlowSpeedMultiplier = 0.5f;
+		Def.Affect.SlowDurationSeconds = 3.f;
+
+		Def.Constraint.ConstraintType = ENovaAbilityConstraintType::TetherToActor;
+		Def.Constraint.TetherDurationSeconds = 3.f;
+
+		Def.CooldownSeconds = 2.f;
+		Def.EnergyCost = 15.f;
+		return Def;
+	}
+}
+
 UElementAbilityComponent::UElementAbilityComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
@@ -43,6 +78,14 @@ void UElementAbilityComponent::BeginPlay()
 		{
 			LoadAndRegisterAbilityAsset(Pair.Key);
 		}
+	}
+
+	// Bind (Patch 6) is registered from C++ so it always exists, even without a
+	// Content asset. If a DA_Ability_Bind asset was mapped and already loaded
+	// above, respect it; otherwise seed the built-in default.
+	if (!Abilities.Contains(TEXT("Bind")))
+	{
+		RegisterAbility(MakeBindDefaultDef());
 	}
 }
 

@@ -10,8 +10,8 @@
 /**
  * Executes one ability graph definition at runtime.
  * Pipeline: Shape (geometry) -> Path (where it resolves) -> Spawn (persistent
- * actors) -> Affect (effects on detected targets). Constraint/Interact node
- * evaluation comes in a later patch.
+ * actors) -> Affect (effects on detected targets) -> Constraint (anchor the
+ * effect to a hit target). Interact node evaluation comes in a later patch.
  */
 UCLASS(BlueprintType)
 class UNovaAbilityGraphRuntime : public UObject
@@ -43,9 +43,15 @@ private:
 	/** Spawn node: leave persistent actors at the effect origin. */
 	void ExecuteSpawn(UWorld* World, const FVector& EffectOrigin, const FVector& Direction) const;
 
-	/** Affect node: detect targets inside the shape and apply the effect. */
+	/** Affect node: detect targets inside the shape and apply the effect.
+	 *  Fills OutAffected with every actor the effect landed on (for Constraint). */
 	void ExecuteAffect(UWorld* World, AActor* Instigator, const FVector& EffectOrigin,
-		const FVector& Direction, float Range, float HalfArcRad, float DebugDrawSeconds) const;
+		const FVector& Direction, float Range, float HalfArcRad, float DebugDrawSeconds,
+		TArray<AActor*>& OutAffected) const;
+
+	/** Constraint node: anchor the effect to a hit target (spawns a tether link). */
+	void ExecuteConstraint(UWorld* World, AActor* Instigator,
+		const TArray<AActor*>& AffectedActors) const;
 
 	FNovaAbilityGraphDef Definition;
 

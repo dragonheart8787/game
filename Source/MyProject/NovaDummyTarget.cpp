@@ -5,6 +5,7 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/Engine.h"
+#include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 
 DEFINE_LOG_CATEGORY(LogNovaDummy);
@@ -61,4 +62,35 @@ float ANovaDummyTarget::TakeDamage(float DamageAmount, const FDamageEvent& Damag
 	}
 
 	return Applied;
+}
+
+void ANovaDummyTarget::ApplySlow(float SpeedMultiplier, float DurationSeconds)
+{
+	CurrentSpeedMultiplier = FMath::Clamp(SpeedMultiplier, 0.f, 1.f);
+
+	// Re-applying refreshes the timer rather than stacking; a single restore wins.
+	GetWorldTimerManager().SetTimer(SlowTimerHandle, this, &ANovaDummyTarget::RestoreSpeed,
+		FMath::Max(DurationSeconds, 0.01f), false);
+
+	const FString Message = FString::Printf(TEXT("[Dummy %s] slowed to %.0f%% (%.0f -> %.0f) for %.1fs"),
+		*GetName(), CurrentSpeedMultiplier * 100.f, BaseMoveSpeed, GetCurrentMoveSpeed(), DurationSeconds);
+	UE_LOG(LogNovaDummy, Log, TEXT("%s"), *Message);
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(static_cast<int32>(GetUniqueID()) + 1, DurationSeconds,
+			FColor::Purple, Message);
+	}
+}
+
+void ANovaDummyTarget::RestoreSpeed()
+{
+	CurrentSpeedMultiplier = 1.f;
+
+	const FString Message = FString::Printf(TEXT("[Dummy %s] slow expired, speed restored to %.0f"),
+		*GetName(), GetCurrentMoveSpeed());
+	UE_LOG(LogNovaDummy, Log, TEXT("%s"), *Message);
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(static_cast<int32>(GetUniqueID()) + 1, 3.f, FColor::Green, Message);
+	}
 }

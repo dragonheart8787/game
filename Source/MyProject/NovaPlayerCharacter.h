@@ -39,6 +39,11 @@ public:
 	 *  control-mask and identity dash-lock gates directly. */
 	void Dash();
 
+	/** Cast Bind (Patch 6) from the PIE console: press ` and type NovaCastBind.
+	 *  Kept off the CastAbility1/2 slots — no new IMC key needed. */
+	UFUNCTION(Exec)
+	void NovaCastBind();
+
 protected:
 
 	virtual void NotifyControllerChanged() override;

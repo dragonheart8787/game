@@ -265,6 +265,16 @@ void ANovaPlayerCharacter::CastAbility2()
 	ElementAbilityComp->CastAbilityById(TEXT("Edgewall"));
 }
 
+void ANovaPlayerCharacter::NovaCastBind()
+{
+	if (IsControlHeld())
+	{
+		return;
+	}
+	ElementAbilityComp->SetRuntimeDirection(GetActorForwardVector());
+	ElementAbilityComp->CastAbilityById(TEXT("Bind"));
+}
+
 void ANovaPlayerCharacter::TriggerStoryA()
 {
 	if (UStoryDirectorSubsystem* Story = GetGameInstance()->GetSubsystem<UStoryDirectorSubsystem>())
