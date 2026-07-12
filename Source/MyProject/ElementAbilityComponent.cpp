@@ -5,6 +5,7 @@
 #include "AbilityGraphRuntime.h"
 #include "IdentityOverrideComponent.h"
 #include "NovaAbilityDataAsset.h"
+#include "NovaAbilityFusion.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 
@@ -86,6 +87,27 @@ void UElementAbilityComponent::BeginPlay()
 	if (!Abilities.Contains(TEXT("Bind")))
 	{
 		RegisterAbility(MakeBindDefaultDef());
+	}
+
+	// RendLock (Patch 7) is never authored: it is fused at runtime from whatever
+	// Slash and Bind resolved to above (DataAsset or C++ default), so retuning a
+	// component ability retunes the fusion with no RendLock-side edit. A mapped
+	// DA_Ability_RendLock would win via the same guard the other abilities use.
+	if (!Abilities.Contains(TEXT("RendLock")))
+	{
+		const FNovaAbilityGraphDef* SlashDef = Abilities.Find(TEXT("Slash"));
+		const FNovaAbilityGraphDef* BindDef = Abilities.Find(TEXT("Bind"));
+		if (SlashDef && BindDef)
+		{
+			RegisterAbility(UNovaAbilityFusionLibrary::FuseAbilityGraphDefs(
+				*SlashDef, *BindDef, TEXT("RendLock"), FText::FromString(TEXT("RendLock"))));
+		}
+		else
+		{
+			UE_LOG(LogNovaAbility, Warning,
+				TEXT("RendLock fusion skipped: Slash registered=%d, Bind registered=%d"),
+				SlashDef != nullptr, BindDef != nullptr);
+		}
 	}
 }
 
@@ -283,4 +305,15 @@ TArray<FName> UElementAbilityComponent::GetRegisteredAbilityIds() const
 	TArray<FName> Ids;
 	Abilities.GenerateKeyArray(Ids);
 	return Ids;
+}
+
+bool UElementAbilityComponent::GetAbilityDefinition(FName AbilityId, FNovaAbilityGraphDef& OutDefinition) const
+{
+	const FNovaAbilityGraphDef* Definition = Abilities.Find(AbilityId);
+	if (!Definition)
+	{
+		return false;
+	}
+	OutDefinition = *Definition;
+	return true;
 }

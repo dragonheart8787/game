@@ -78,6 +78,12 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category="Ability")
 	TArray<FName> GetRegisteredAbilityIds() const;
 
+	/** Copy of a registered ability's definition; false when unknown. Lets the
+	 *  debug overlay and regression drivers derive expectations from live data
+	 *  instead of hardcoding tuning values. */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category="Ability")
+	bool GetAbilityDefinition(FName AbilityId, FNovaAbilityGraphDef& OutDefinition) const;
+
 	/** Human-readable text of the last ability event, for the debug overlay. */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category="Ability")
 	const FString& GetLastAbilityEventText() const { return LastAbilityEventText; }

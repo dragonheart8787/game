@@ -137,11 +137,26 @@ void UNovaAbilityGraphRuntime::ExecuteAffect(UWorld* World, AActor* Instigator, 
 	const FVector& Direction, float Range, float HalfArcRad, float DebugDrawSeconds,
 	TArray<AActor*>& OutAffected) const
 {
-	const ENovaAbilityAffectType AffectType = Definition.Affect.AffectType;
-	if (AffectType != ENovaAbilityAffectType::Damage && AffectType != ENovaAbilityAffectType::Slow)
+	// Patch 7: an ability carries a chain of affect nodes (primary slot plus
+	// fused extras). Collect the ones that need target detection; None/Block
+	// contribute nothing here — Block is purely physical, the spawned wall's
+	// collision does the work.
+	TArray<const FNovaAbilityAffectNode*> Chain;
+	const auto AddDetectingNode = [&Chain](const FNovaAbilityAffectNode& Node)
 	{
-		// None / Block: nothing to detect. Block is purely physical — the spawned
-		// wall's collision does the work.
+		if (Node.AffectType == ENovaAbilityAffectType::Damage
+			|| Node.AffectType == ENovaAbilityAffectType::Slow)
+		{
+			Chain.Add(&Node);
+		}
+	};
+	AddDetectingNode(Definition.Affect);
+	for (const FNovaAbilityAffectNode& Extra : Definition.ExtraAffects)
+	{
+		AddDetectingNode(Extra);
+	}
+	if (Chain.Num() == 0)
+	{
 		return;
 	}
 
@@ -176,23 +191,31 @@ void UNovaAbilityGraphRuntime::ExecuteAffect(UWorld* World, AActor* Instigator, 
 
 		HitActors.Add(Target); // dedupe: never process the same actor twice this cast
 
-		if (AffectType == ENovaAbilityAffectType::Damage)
+		// Run the whole affect chain on this target; it counts as affected (and
+		// thus tetherable by a Constraint) if any node in the chain landed.
+		bool bAffected = false;
+		for (const FNovaAbilityAffectNode* Node : Chain)
+		{
+			if (Node->AffectType == ENovaAbilityAffectType::Damage)
+			{
+				UGameplayStatics::ApplyDamage(Target, Node->Damage,
+					InstigatorPawn ? InstigatorPawn->GetController() : nullptr, Instigator, nullptr);
+				DrawDebugSphere(World, Target->GetActorLocation(), 40.f, 12, FColor::Red, false, DebugDrawSeconds);
+				bAffected = true;
+			}
+			else // Slow — only actors that can actually be slowed take this node, so a
+			{    // Constraint tethers to a real target, not an incidental trigger volume.
+				if (ANovaDummyTarget* Dummy = Cast<ANovaDummyTarget>(Target))
+				{
+					Dummy->ApplySlow(Node->SlowSpeedMultiplier, Node->SlowDurationSeconds);
+					DrawDebugSphere(World, Target->GetActorLocation(), 40.f, 12, FColor::Purple, false, DebugDrawSeconds);
+					bAffected = true;
+				}
+			}
+		}
+		if (bAffected)
 		{
 			OutAffected.Add(Target);
-			UGameplayStatics::ApplyDamage(Target, Definition.Affect.Damage,
-				InstigatorPawn ? InstigatorPawn->GetController() : nullptr, Instigator, nullptr);
-			DrawDebugSphere(World, Target->GetActorLocation(), 40.f, 12, FColor::Red, false, DebugDrawSeconds);
-		}
-		else // Slow — only actors that can actually be slowed count as affected, so a
-		{    // Constraint tethers to a real target, not an incidental trigger volume.
-			ANovaDummyTarget* Dummy = Cast<ANovaDummyTarget>(Target);
-			if (!Dummy)
-			{
-				continue;
-			}
-			OutAffected.Add(Target);
-			Dummy->ApplySlow(Definition.Affect.SlowSpeedMultiplier, Definition.Affect.SlowDurationSeconds);
-			DrawDebugSphere(World, Target->GetActorLocation(), 40.f, 12, FColor::Purple, false, DebugDrawSeconds);
 		}
 	}
 }

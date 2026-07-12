@@ -275,6 +275,16 @@ void ANovaPlayerCharacter::NovaCastBind()
 	ElementAbilityComp->CastAbilityById(TEXT("Bind"));
 }
 
+void ANovaPlayerCharacter::NovaCastRendLock()
+{
+	if (IsControlHeld())
+	{
+		return;
+	}
+	ElementAbilityComp->SetRuntimeDirection(GetActorForwardVector());
+	ElementAbilityComp->CastAbilityById(TEXT("RendLock"));
+}
+
 void ANovaPlayerCharacter::TriggerStoryA()
 {
 	if (UStoryDirectorSubsystem* Story = GetGameInstance()->GetSubsystem<UStoryDirectorSubsystem>())

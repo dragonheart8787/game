@@ -246,6 +246,15 @@ struct FNovaAbilityGraphDef
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability")
 	FNovaAbilityAffectNode Affect;
 
+	/**
+	 * Additional affect nodes executed after Affect on every detected target
+	 * (Patch 7: fusion). A fused ability stacks its component abilities' effects
+	 * here — e.g. RendLock = Slash's Damage in Affect + Bind's Slow appended.
+	 * Additive on purpose: existing single-affect assets keep serializing as-is.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability")
+	TArray<FNovaAbilityAffectNode> ExtraAffects;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability")
 	FNovaAbilityConstraintNode Constraint;
 

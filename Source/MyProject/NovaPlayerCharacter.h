@@ -44,6 +44,11 @@ public:
 	UFUNCTION(Exec)
 	void NovaCastBind();
 
+	/** Cast RendLock (Patch 7, Slash x Bind fusion) from the PIE console.
+	 *  Same pattern as NovaCastBind: no IMC key, no CastAbility1/2 slot. */
+	UFUNCTION(Exec)
+	void NovaCastRendLock();
+
 protected:
 
 	virtual void NotifyControllerChanged() override;
