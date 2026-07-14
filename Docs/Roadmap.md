@@ -23,7 +23,10 @@
   - 暴露並最小侵入處理單一 Affect 限制:`ExtraAffects` 附加陣列(過渡形態,終局遷移歸 P8)
   - NovaFusionTestDriver 16/16 全綠(組合/施放/命中/tether 跟隨/冷卻獨立性),期望值全部 runtime 推導、無寫死調校值
   - 殘留設計債(P8 輸入):Affect+ExtraAffects → 單一 `TArray Affects` 遷移;Spawn/Constraint 仍單槽(Cage / Prism Weave 會踩到)
-- **下一步:Patch 8(資料結構終局設計 + Cost/Cooldown 節點化 + 存讀檔端到端)**
+- **Patch 8 進行中**(2026-07-14):
+  - **Task A 已完成**(commit `8c71f47`):Affect 陣列化 —— `FNovaAbilityGraphDef.Affects`(`TArray<FNovaAbilityAffectNode>`)為終局欄位;舊 `Affect`/`ExtraAffects` 降級為隱藏序列化 shim,`UNovaAbilityDataAsset::PostLoad` 經 `MigrateLegacyFields()` 自動收編(冪等;資產重存後 shim 可在後續 patch 刪除)。全部消費端(ExecuteAffect / FuseAbilityGraphDefs / ElementAbilityComponent / FusionTestDriver)已改用 `Affects`。編譯 exit 0;四個 driver PIE 迴歸全綠(Ability ✅ / Identity 全基準吻合 ✅ / Bind 8/8 ✅ / Fusion 18/18 ✅,PASS 數自 16 增至 18 係 P8 測試改寫拆分檢查所致);`DA_Ability_Slash`、`DA_Ability_TestOverride` 均在 log 證實自動遷移
+  - 待辦:Cost 節點化、Cooldown 節點化、Niagara soft ref 欄位、修正提供者介面、DataAsset 重存、存讀檔端到端 + SchemaVersion、test driver 合併評估
+- **下一步:Patch 8 Task B(Cost 節點化)**
 
 ---
 
