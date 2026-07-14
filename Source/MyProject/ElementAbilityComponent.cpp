@@ -33,9 +33,10 @@ namespace
 
 		Def.Spawn.SpawnType = ENovaAbilitySpawnType::None;
 
-		Def.Affect.AffectType = ENovaAbilityAffectType::Slow;
-		Def.Affect.SlowSpeedMultiplier = 0.5f;
-		Def.Affect.SlowDurationSeconds = 3.f;
+		FNovaAbilityAffectNode& Slow = Def.Affects.AddDefaulted_GetRef();
+		Slow.AffectType = ENovaAbilityAffectType::Slow;
+		Slow.SlowSpeedMultiplier = 0.5f;
+		Slow.SlowDurationSeconds = 3.f;
 
 		Def.Constraint.ConstraintType = ENovaAbilityConstraintType::TetherToActor;
 		Def.Constraint.TetherDurationSeconds = 3.f;
@@ -258,7 +259,8 @@ bool UElementAbilityComponent::CastAbilityById(FName AbilityId)
 
 	BroadcastAbilityEvent(AbilityId, TEXT("CastStarted"),
 		FString::Printf(TEXT("W=%.0f Arc=%.0f R=%.0f Dmg=%.0f"),
-			RuntimeParams.Width, RuntimeParams.Arc, RuntimeParams.Range, Definition->Affect.Damage));
+			RuntimeParams.Width, RuntimeParams.Arc, RuntimeParams.Range,
+			Definition->Affects.Num() > 0 ? Definition->Affects[0].Damage : 0.f));
 	return true;
 }
 

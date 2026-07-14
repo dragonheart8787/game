@@ -100,16 +100,20 @@ void ANovaFusionTestDriver::StepVerifyComposition()
 			&& RendLockDef.Path.PathType == SlashDef.Path.PathType,
 		TEXT("shape+path inherited from Slash"));
 
-	// Affect chain = Slash's Damage first, Bind's Slow appended.
-	const bool bChain = RendLockDef.Affect.AffectType == ENovaAbilityAffectType::Damage
-		&& RendLockDef.Affect.Damage == SlashDef.Affect.Damage
-		&& RendLockDef.ExtraAffects.Num() == 1
-		&& RendLockDef.ExtraAffects[0].AffectType == ENovaAbilityAffectType::Slow
-		&& RendLockDef.ExtraAffects[0].SlowSpeedMultiplier == BindDef.Affect.SlowSpeedMultiplier
-		&& RendLockDef.ExtraAffects[0].SlowDurationSeconds == BindDef.Affect.SlowDurationSeconds;
+	// Affect chain = Slash's Damage first, Bind's Slow appended (P8: one array).
+	const bool bParts = SlashDef.Affects.Num() >= 1 && BindDef.Affects.Num() >= 1;
+	const bool bChain = bParts
+		&& RendLockDef.Affects.Num() == 2
+		&& RendLockDef.Affects[0].AffectType == ENovaAbilityAffectType::Damage
+		&& RendLockDef.Affects[0].Damage == SlashDef.Affects[0].Damage
+		&& RendLockDef.Affects[1].AffectType == ENovaAbilityAffectType::Slow
+		&& RendLockDef.Affects[1].SlowSpeedMultiplier == BindDef.Affects[0].SlowSpeedMultiplier
+		&& RendLockDef.Affects[1].SlowDurationSeconds == BindDef.Affects[0].SlowDurationSeconds;
 	LogCheck(bChain, FString::Printf(
 		TEXT("affect chain = Slash.Damage(%.0f) + Bind.Slow(%.2fx/%.1fs)"),
-		SlashDef.Affect.Damage, BindDef.Affect.SlowSpeedMultiplier, BindDef.Affect.SlowDurationSeconds));
+		bParts ? SlashDef.Affects[0].Damage : -1.f,
+		bParts ? BindDef.Affects[0].SlowSpeedMultiplier : -1.f,
+		bParts ? BindDef.Affects[0].SlowDurationSeconds : -1.f));
 
 	// Constraint inherited from Bind (Slash has none).
 	LogCheck(RendLockDef.Constraint.ConstraintType == ENovaAbilityConstraintType::TetherToActor
@@ -181,13 +185,15 @@ void ANovaFusionTestDriver::StepVerifyHit()
 	// Both halves of the fusion landed on the same cast: exactly Slash's damage
 	// AND Bind's slow, against the live component defs.
 	const float Health = Target->GetHealth();
-	const float ExpectedHealth = HealthBeforeCast - SlashDef.Affect.Damage;
+	const float ExpectedHealth = HealthBeforeCast
+		- (SlashDef.Affects.Num() > 0 ? SlashDef.Affects[0].Damage : 0.f);
 	LogCheck(FMath::IsNearlyEqual(Health, ExpectedHealth, 0.1f),
 		FString::Printf(TEXT("dummy took Slash's damage (health %.0f -> %.0f, expected %.0f)"),
 			HealthBeforeCast, Health, ExpectedHealth));
 
 	const float Speed = Target->GetCurrentMoveSpeed();
-	const float ExpectedSpeed = BaseSpeed * BindDef.Affect.SlowSpeedMultiplier;
+	const float ExpectedSpeed = BaseSpeed
+		* (BindDef.Affects.Num() > 0 ? BindDef.Affects[0].SlowSpeedMultiplier : 1.f);
 	LogCheck(Target->IsSlowed() && FMath::IsNearlyEqual(Speed, ExpectedSpeed, 1.f),
 		FString::Printf(TEXT("dummy slowed to Bind's multiplier (%.0f, expected %.0f)"), Speed, ExpectedSpeed));
 

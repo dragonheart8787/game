@@ -21,6 +21,9 @@ class UNovaAbilityDataAsset : public UPrimaryDataAsset
 
 public:
 
+	/** Folds pre-Patch-8 serialized fields into the endgame Definition shape. */
+	virtual void PostLoad() override;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Ability")
 	FNovaAbilityGraphDef Definition;
 };

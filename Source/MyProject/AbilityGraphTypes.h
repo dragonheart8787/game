@@ -243,17 +243,13 @@ struct FNovaAbilityGraphDef
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability")
 	FNovaAbilitySpawnNode Spawn;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability")
-	FNovaAbilityAffectNode Affect;
-
 	/**
-	 * Additional affect nodes executed after Affect on every detected target
-	 * (Patch 7: fusion). A fused ability stacks its component abilities' effects
-	 * here — e.g. RendLock = Slash's Damage in Affect + Bind's Slow appended.
-	 * Additive on purpose: existing single-affect assets keep serializing as-is.
+	 * Affect chain, run in order on every detected target (Patch 8 endgame shape).
+	 * A plain ability has one entry; a fusion stacks its component abilities'
+	 * effects — e.g. RendLock = [Slash's Damage, Bind's Slow]. Empty = no effect.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability")
-	TArray<FNovaAbilityAffectNode> ExtraAffects;
+	TArray<FNovaAbilityAffectNode> Affects;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability")
 	FNovaAbilityConstraintNode Constraint;
@@ -266,4 +262,43 @@ struct FNovaAbilityGraphDef
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability")
 	FNovaAbilityRuntimeParams DefaultParams;
+
+	// --- Pre-Patch-8 migration shims (LEGACY — never read these directly) -----
+	// These keep their ORIGINAL serialized names so pre-P8 packages load straight
+	// into them with no CoreRedirects involved. MigrateLegacyFields() folds them
+	// into Affects and CLEARS them back to defaults, so a re-saved asset omits
+	// the tags entirely (delta serialization) and the fold is idempotent. Hidden
+	// from the editor / Blueprint on purpose; delete once all assets are re-saved
+	// and a follow-up patch retires the shims.
+
+	/** LEGACY pre-P8 single affect slot; folds to the front of Affects. */
+	UPROPERTY()
+	FNovaAbilityAffectNode Affect;
+
+	/** LEGACY Patch 7 transitional fused-affect chain; appends to Affects. */
+	UPROPERTY()
+	TArray<FNovaAbilityAffectNode> ExtraAffects;
+
+	/**
+	 * Folds pre-Patch-8 fields into their endgame replacements, clearing the
+	 * legacy slots (see note above). Called from UNovaAbilityDataAsset::PostLoad;
+	 * returns true when anything was actually migrated so the caller can log it.
+	 */
+	bool MigrateLegacyFields()
+	{
+		bool bMigrated = false;
+		if (Affect.AffectType != ENovaAbilityAffectType::None)
+		{
+			Affects.Insert(Affect, 0);
+			Affect = FNovaAbilityAffectNode();
+			bMigrated = true;
+		}
+		if (ExtraAffects.Num() > 0)
+		{
+			Affects.Append(ExtraAffects);
+			ExtraAffects.Reset();
+			bMigrated = true;
+		}
+		return bMigrated;
+	}
 };

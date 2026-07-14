@@ -4,18 +4,14 @@
 
 namespace
 {
-	/** Append every active affect node of Def (primary slot + extras) to OutChain. */
+	/** Append every active affect node of Def's chain to OutChain. */
 	void AppendAffectChain(const FNovaAbilityGraphDef& Def, TArray<FNovaAbilityAffectNode>& OutChain)
 	{
-		if (Def.Affect.AffectType != ENovaAbilityAffectType::None)
+		for (const FNovaAbilityAffectNode& Node : Def.Affects)
 		{
-			OutChain.Add(Def.Affect);
-		}
-		for (const FNovaAbilityAffectNode& Extra : Def.ExtraAffects)
-		{
-			if (Extra.AffectType != ENovaAbilityAffectType::None)
+			if (Node.AffectType != ENovaAbilityAffectType::None)
 			{
-				OutChain.Add(Extra);
+				OutChain.Add(Node);
 			}
 		}
 	}
@@ -44,15 +40,8 @@ FNovaAbilityGraphDef UNovaAbilityFusionLibrary::FuseAbilityGraphDefs(const FNova
 
 	// Affects stack: every target the fused shape detects receives both
 	// abilities' effect chains, in primary-then-secondary order.
-	TArray<FNovaAbilityAffectNode> Chain;
-	AppendAffectChain(Primary, Chain);
-	AppendAffectChain(Secondary, Chain);
-	if (Chain.Num() > 0)
-	{
-		Fused.Affect = Chain[0];
-		Chain.RemoveAt(0);
-	}
-	Fused.ExtraAffects = MoveTemp(Chain);
+	AppendAffectChain(Primary, Fused.Affects);
+	AppendAffectChain(Secondary, Fused.Affects);
 
 	// Costs are derived, not authored: a fusion spends both parts' energy and is
 	// on cooldown at least as long as its heaviest part.
@@ -62,7 +51,7 @@ FNovaAbilityGraphDef UNovaAbilityFusionLibrary::FuseAbilityGraphDefs(const FNova
 	UE_LOG(LogTemp, Log,
 		TEXT("[AbilityFusion] '%s' = '%s' x '%s' (affects %d, constraint %d, cost %.0f, cd %.1fs)"),
 		*FusedAbilityId.ToString(), *Primary.AbilityId.ToString(), *Secondary.AbilityId.ToString(),
-		1 + Fused.ExtraAffects.Num(), static_cast<int32>(Fused.Constraint.ConstraintType),
+		Fused.Affects.Num(), static_cast<int32>(Fused.Constraint.ConstraintType),
 		Fused.EnergyCost, Fused.CooldownSeconds);
 
 	return Fused;

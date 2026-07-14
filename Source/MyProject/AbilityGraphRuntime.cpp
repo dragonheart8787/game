@@ -137,23 +137,17 @@ void UNovaAbilityGraphRuntime::ExecuteAffect(UWorld* World, AActor* Instigator, 
 	const FVector& Direction, float Range, float HalfArcRad, float DebugDrawSeconds,
 	TArray<AActor*>& OutAffected) const
 {
-	// Patch 7: an ability carries a chain of affect nodes (primary slot plus
-	// fused extras). Collect the ones that need target detection; None/Block
-	// contribute nothing here — Block is purely physical, the spawned wall's
-	// collision does the work.
+	// An ability carries a chain of affect nodes (P7 fusion, P8 endgame array).
+	// Collect the ones that need target detection; None/Block contribute nothing
+	// here — Block is purely physical, the spawned wall's collision does the work.
 	TArray<const FNovaAbilityAffectNode*> Chain;
-	const auto AddDetectingNode = [&Chain](const FNovaAbilityAffectNode& Node)
+	for (const FNovaAbilityAffectNode& Node : Definition.Affects)
 	{
 		if (Node.AffectType == ENovaAbilityAffectType::Damage
 			|| Node.AffectType == ENovaAbilityAffectType::Slow)
 		{
 			Chain.Add(&Node);
 		}
-	};
-	AddDetectingNode(Definition.Affect);
-	for (const FNovaAbilityAffectNode& Extra : Definition.ExtraAffects)
-	{
-		AddDetectingNode(Extra);
 	}
 	if (Chain.Num() == 0)
 	{
