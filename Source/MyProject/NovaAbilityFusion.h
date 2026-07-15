@@ -18,8 +18,8 @@
  *   Spawn                         -> Primary's unless None, else Secondary's
  *   Affect chain                  -> Primary's chain + Secondary's chain appended
  *   Constraint                    -> Primary's unless None, else Secondary's
- *   EnergyCost                    -> Primary + Secondary (a fusion costs both parts)
- *   CooldownSeconds               -> max(Primary, Secondary) (as heavy as its heaviest part)
+ *   Cost.Amount                   -> Primary + Secondary (a fusion costs both parts)
+ *   Cooldown.CooldownSeconds      -> max(Primary, Secondary) (as heavy as its heaviest part)
  */
 UCLASS()
 class UNovaAbilityFusionLibrary : public UBlueprintFunctionLibrary

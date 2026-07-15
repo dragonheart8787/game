@@ -120,12 +120,22 @@ void ANovaFusionTestDriver::StepVerifyComposition()
 			&& RendLockDef.Constraint.TetherDurationSeconds == BindDef.Constraint.TetherDurationSeconds,
 		TEXT("constraint inherited from Bind (TetherToActor)"));
 
-	// Costs derived, not authored: sum / max.
-	LogCheck(RendLockDef.EnergyCost == SlashDef.EnergyCost + BindDef.EnergyCost
-			&& RendLockDef.CooldownSeconds == FMath::Max(SlashDef.CooldownSeconds, BindDef.CooldownSeconds),
+	// Costs derived, not authored: sum / max (P8 Task B: node fields).
+	LogCheck(RendLockDef.Cost.Amount == SlashDef.Cost.Amount + BindDef.Cost.Amount
+			&& RendLockDef.Cooldown.CooldownSeconds
+				== FMath::Max(SlashDef.Cooldown.CooldownSeconds, BindDef.Cooldown.CooldownSeconds),
 		FString::Printf(TEXT("cost %.0f == %.0f+%.0f, cd %.1f == max(%.1f, %.1f)"),
-			RendLockDef.EnergyCost, SlashDef.EnergyCost, BindDef.EnergyCost,
-			RendLockDef.CooldownSeconds, SlashDef.CooldownSeconds, BindDef.CooldownSeconds));
+			RendLockDef.Cost.Amount, SlashDef.Cost.Amount, BindDef.Cost.Amount,
+			RendLockDef.Cooldown.CooldownSeconds,
+			SlashDef.Cooldown.CooldownSeconds, BindDef.Cooldown.CooldownSeconds));
+
+	// P8 Task B reserved fields: everything still spends Energy, and nobody has
+	// a shared cooldown group until that system actually lands.
+	LogCheck(RendLockDef.Cost.CostType == ENovaAbilityCostType::Energy
+			&& RendLockDef.Cooldown.SharedCooldownGroup == NAME_None
+			&& SlashDef.Cooldown.SharedCooldownGroup == NAME_None
+			&& BindDef.Cooldown.SharedCooldownGroup == NAME_None,
+		TEXT("cost type Energy, SharedCooldownGroup defaults to None everywhere"));
 }
 
 void ANovaFusionTestDriver::StepCast()
@@ -163,9 +173,9 @@ void ANovaFusionTestDriver::StepCast()
 	LogCheck(!bSecond && Abilities->GetRemainingCooldown(TEXT("RendLock")) > 0.f,
 		FString::Printf(TEXT("same-frame re-cast blocked by own cooldown (%.1fs remaining)"),
 			Abilities->GetRemainingCooldown(TEXT("RendLock"))));
-	LogCheck(FMath::IsNearlyEqual(EnergyBefore - EnergyAfter, RendLockDef.EnergyCost, 0.5f),
+	LogCheck(FMath::IsNearlyEqual(EnergyBefore - EnergyAfter, RendLockDef.Cost.Amount, 0.5f),
 		FString::Printf(TEXT("energy spent %.0f == Slash+Bind cost (%.0f -> %.0f)"),
-			RendLockDef.EnergyCost, EnergyBefore, EnergyAfter));
+			RendLockDef.Cost.Amount, EnergyBefore, EnergyAfter));
 
 	// Casting the fusion must not touch the component abilities' cooldowns.
 	LogCheck(Abilities->GetRemainingCooldown(TEXT("Slash")) == 0.f

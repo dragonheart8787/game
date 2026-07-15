@@ -41,8 +41,8 @@ namespace
 		Def.Constraint.ConstraintType = ENovaAbilityConstraintType::TetherToActor;
 		Def.Constraint.TetherDurationSeconds = 3.f;
 
-		Def.CooldownSeconds = 2.f;
-		Def.EnergyCost = 15.f;
+		Def.Cooldown.CooldownSeconds = 2.f;
+		Def.Cost.Amount = 15.f;
 		return Def;
 	}
 }
@@ -238,10 +238,11 @@ bool UElementAbilityComponent::CastAbilityById(FName AbilityId)
 		return false;
 	}
 
-	if (Energy < Definition->EnergyCost)
+	// Only Energy exists as a pool today; other CostTypes are reserved fields.
+	if (Energy < Definition->Cost.Amount)
 	{
 		BroadcastAbilityEvent(AbilityId, TEXT("CastBlocked_Cost"),
-			FString::Printf(TEXT("need %.0f, have %.0f"), Definition->EnergyCost, Energy));
+			FString::Printf(TEXT("need %.0f, have %.0f"), Definition->Cost.Amount, Energy));
 		return false;
 	}
 
@@ -254,8 +255,8 @@ bool UElementAbilityComponent::CastAbilityById(FName AbilityId)
 		return false;
 	}
 
-	Energy -= Definition->EnergyCost;
-	CooldownEndTimes.Add(AbilityId, GetWorld()->GetTimeSeconds() + Definition->CooldownSeconds);
+	Energy -= Definition->Cost.Amount;
+	CooldownEndTimes.Add(AbilityId, GetWorld()->GetTimeSeconds() + Definition->Cooldown.CooldownSeconds);
 
 	BroadcastAbilityEvent(AbilityId, TEXT("CastStarted"),
 		FString::Printf(TEXT("W=%.0f Arc=%.0f R=%.0f Dmg=%.0f"),

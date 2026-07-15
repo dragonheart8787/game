@@ -7,10 +7,8 @@
 
 /**
  * Node categories that make up an ability graph.
- * Shape/Path/Constraint/Spawn/Affect have typed node structs below; Interact/
- * Cost/Cooldown are reserved here so adding them later doesn't break the enum,
- * and their typed structs land when those systems are built (CooldownSeconds /
- * EnergyCost on FNovaAbilityGraphDef stand in for Cost/Cooldown until then).
+ * Shape/Path/Constraint/Spawn/Affect/Cost/Cooldown have typed node structs
+ * below; Interact is reserved so adding it later doesn't break the enum.
  */
 UENUM(BlueprintType)
 enum class ENovaAbilityNodeType : uint8
@@ -77,6 +75,15 @@ enum class ENovaAbilityConstraintType : uint8
 	None,
 	/** Anchor the effect to the hit actor and follow it for a duration — Bind. */
 	TetherToActor
+};
+
+/** What resource a cast spends. Append only — serialized by value (P6 lesson). */
+UENUM(BlueprintType)
+enum class ENovaAbilityCostType : uint8
+{
+	/** Spend from the caster's energy pool (the only pool that exists today). */
+	Energy
+	// Reserved next: Health, Material — append here, never insert.
 };
 
 /** Runtime-adjustable parameters shared by every ability instance. */
@@ -217,6 +224,38 @@ struct FNovaAbilityConstraintNode
 	float TetherDurationSeconds = 3.f;
 };
 
+/** Cost node: what a successful cast spends (Patch 8 endgame shape). */
+USTRUCT(BlueprintType)
+struct FNovaAbilityCostNode
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability")
+	ENovaAbilityCostType CostType = ENovaAbilityCostType::Energy;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability", meta=(ClampMin="0.0"))
+	float Amount = 10.f;
+};
+
+/** Cooldown node: when the ability may cast again (Patch 8 endgame shape). */
+USTRUCT(BlueprintType)
+struct FNovaAbilityCooldownNode
+{
+	GENERATED_BODY()
+
+	/** Seconds after a successful cast before this ability is ready again. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability", meta=(ClampMin="0.0"))
+	float CooldownSeconds = 1.f;
+
+	/**
+	 * Reserved: abilities sharing a non-None group will one day share cooldown
+	 * state (fusion vs component abilities live here). Field only for now — the
+	 * runtime keys cooldowns by AbilityId and ignores this entirely.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability")
+	FName SharedCooldownGroup = NAME_None;
+};
+
 /**
  * Full definition of one composed ability: Shape -> Path -> Spawn -> Affect,
  * with an optional Constraint that anchors the effect to a hit target.
@@ -255,10 +294,10 @@ struct FNovaAbilityGraphDef
 	FNovaAbilityConstraintNode Constraint;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability")
-	float CooldownSeconds = 1.f;
+	FNovaAbilityCostNode Cost;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability")
-	float EnergyCost = 10.f;
+	FNovaAbilityCooldownNode Cooldown;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability")
 	FNovaAbilityRuntimeParams DefaultParams;
@@ -279,6 +318,20 @@ struct FNovaAbilityGraphDef
 	UPROPERTY()
 	TArray<FNovaAbilityAffectNode> ExtraAffects;
 
+	// The float shims default to -1 (impossible: both clamped >= 0 in the old
+	// editor UI). Pre-P8 packages only serialized these when the authored value
+	// differed from the OLD defaults (10 / 1), and the new nodes' defaults
+	// reproduce exactly those values — so "tag absent" (shim stays -1) needs no
+	// migration, and "tag present" (shim >= 0) folds into the node and resets.
+
+	/** LEGACY pre-P8 top-level energy cost; folds into Cost.Amount. */
+	UPROPERTY()
+	float EnergyCost = -1.f;
+
+	/** LEGACY pre-P8 top-level cooldown; folds into Cooldown.CooldownSeconds. */
+	UPROPERTY()
+	float CooldownSeconds = -1.f;
+
 	/**
 	 * Folds pre-Patch-8 fields into their endgame replacements, clearing the
 	 * legacy slots (see note above). Called from UNovaAbilityDataAsset::PostLoad;
@@ -297,6 +350,18 @@ struct FNovaAbilityGraphDef
 		{
 			Affects.Append(ExtraAffects);
 			ExtraAffects.Reset();
+			bMigrated = true;
+		}
+		if (EnergyCost >= 0.f)
+		{
+			Cost.Amount = EnergyCost;
+			EnergyCost = -1.f;
+			bMigrated = true;
+		}
+		if (CooldownSeconds >= 0.f)
+		{
+			Cooldown.CooldownSeconds = CooldownSeconds;
+			CooldownSeconds = -1.f;
 			bMigrated = true;
 		}
 		return bMigrated;

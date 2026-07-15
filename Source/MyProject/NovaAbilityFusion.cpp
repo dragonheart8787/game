@@ -44,15 +44,19 @@ FNovaAbilityGraphDef UNovaAbilityFusionLibrary::FuseAbilityGraphDefs(const FNova
 	AppendAffectChain(Secondary, Fused.Affects);
 
 	// Costs are derived, not authored: a fusion spends both parts' energy and is
-	// on cooldown at least as long as its heaviest part.
-	Fused.EnergyCost = Primary.EnergyCost + Secondary.EnergyCost;
-	Fused.CooldownSeconds = FMath::Max(Primary.CooldownSeconds, Secondary.CooldownSeconds);
+	// on cooldown at least as long as its heaviest part. Both parts draw from
+	// the only pool that exists (Energy), so summing Amounts stays valid; the
+	// fusion's SharedCooldownGroup relationship gets defined when that system
+	// lands — until then it inherits the default (None, own cooldown).
+	Fused.Cost.Amount = Primary.Cost.Amount + Secondary.Cost.Amount;
+	Fused.Cooldown.CooldownSeconds = FMath::Max(
+		Primary.Cooldown.CooldownSeconds, Secondary.Cooldown.CooldownSeconds);
 
 	UE_LOG(LogTemp, Log,
 		TEXT("[AbilityFusion] '%s' = '%s' x '%s' (affects %d, constraint %d, cost %.0f, cd %.1fs)"),
 		*FusedAbilityId.ToString(), *Primary.AbilityId.ToString(), *Secondary.AbilityId.ToString(),
 		Fused.Affects.Num(), static_cast<int32>(Fused.Constraint.ConstraintType),
-		Fused.EnergyCost, Fused.CooldownSeconds);
+		Fused.Cost.Amount, Fused.Cooldown.CooldownSeconds);
 
 	return Fused;
 }

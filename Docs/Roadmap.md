@@ -25,8 +25,9 @@
   - 殘留設計債(P8 輸入):Affect+ExtraAffects → 單一 `TArray Affects` 遷移;Spawn/Constraint 仍單槽(Cage / Prism Weave 會踩到)
 - **Patch 8 進行中**(2026-07-14):
   - **Task A 已完成**(commit `8c71f47`):Affect 陣列化 —— `FNovaAbilityGraphDef.Affects`(`TArray<FNovaAbilityAffectNode>`)為終局欄位;舊 `Affect`/`ExtraAffects` 降級為隱藏序列化 shim,`UNovaAbilityDataAsset::PostLoad` 經 `MigrateLegacyFields()` 自動收編(冪等;資產重存後 shim 可在後續 patch 刪除)。全部消費端(ExecuteAffect / FuseAbilityGraphDefs / ElementAbilityComponent / FusionTestDriver)已改用 `Affects`。編譯 exit 0;四個 driver PIE 迴歸全綠(Ability ✅ / Identity 全基準吻合 ✅ / Bind 8/8 ✅ / Fusion 18/18 ✅,PASS 數自 16 增至 18 係 P8 測試改寫拆分檢查所致);`DA_Ability_Slash`、`DA_Ability_TestOverride` 均在 log 證實自動遷移
-  - 待辦:Cost 節點化、Cooldown 節點化、Niagara soft ref 欄位、修正提供者介面、DataAsset 重存、存讀檔端到端 + SchemaVersion、test driver 合併評估
-- **下一步:Patch 8 Task B(Cost 節點化)**
+  - **Task B 已完成**(2026-07-15):Cost/Cooldown 節點化 —— 新增 `ENovaAbilityCostType`(僅 Energy,append-only)、`FNovaAbilityCostNode`(CostType + Amount)、`FNovaAbilityCooldownNode`(CooldownSeconds + 預留 SharedCooldownGroup,runtime 仍以 AbilityId 鍵冷卻);頂層 `EnergyCost`/`CooldownSeconds` 降級為 -1 哨兵 legacy shim,`MigrateLegacyFields()` 折入(冪等,tag 缺席即無需遷移)。消費端(ElementAbilityComponent 施放檢查/FuseAbilityGraphDefs sum-max 推導/FusionTestDriver)全部改讀節點欄位。編譯 exit 0;四 driver PIE 迴歸全綠(Ability ✅ / Bind 8/8 ✅ / Fusion 19/19(含 +1 Task B 斷言)✅ / Identity 全基準吻合 ✅);`DA_Ability_Slash`、`DA_Ability_Edgewall`、`DA_Ability_TestOverride` 均在 log 證實 legacy cost/cd 自動折入新節點
+  - 待辦(順序 2026-07-15 重排:先做唯一涉及「關遊戲重開」全新驗證路徑的項目):① WorldState 存讀檔端到端 + SchemaVersion;② Niagara soft ref 欄位 + 修正提供者介面(合併一組,均為純欄位/介面新增、風險低);③ DataAsset 重存、test driver 合併評估(收尾)
+- **下一步:Patch 8 Task C(SchemaVersion + WorldState 存讀檔端到端)**
 
 ---
 
