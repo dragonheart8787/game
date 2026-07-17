@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "unreal-engine-skills-local": {
+      "source": {
+        "source": "directory",
+        "path": "C:/temp/unreal-engine-skills-for-claude-code-plugin"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "unreal-engine-skills-for-claude-code@unreal-engine-skills-local": true
+  }
+}
